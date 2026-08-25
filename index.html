@@ -277,10 +277,10 @@
     <div class="subview" id="sub-usuarios">
       <div class="finblock">
         <h3>Usuarios con acceso al sistema</h3>
-        <p style="color:var(--ink-soft);font-size:12.5px;margin-top:-6px;">Roles: <strong>admin</strong> (control total) o <strong>lectura</strong> (solo ver, sin poder editar nada).</p>
+        <p style="color:var(--ink-soft);font-size:12.5px;margin-top:-6px;">Roles: <strong>super_admin</strong> (todo, incluida la gestión de usuarios — exclusivo de jair) · <strong>admin</strong> (control total del inventario, sin poder tocar usuarios) · <strong>lectura</strong> (solo ver).</p>
         <div class="inlineform">
           <input type="text" id="usrCorreo" placeholder="correo@fpt.com.mx">
-          <select id="usrRol"><option value="admin">admin</option><option value="lectura">lectura</option></select>
+          <select id="usrRol"><option value="admin">admin</option><option value="lectura">lectura</option><option value="super_admin">super_admin</option></select>
           <input type="password" id="usrPassword" placeholder="Contraseña inicial">
           <button class="btn btn-primary btn-sm" id="btnAddUsuario">+ Crear usuario</button>
         </div>
