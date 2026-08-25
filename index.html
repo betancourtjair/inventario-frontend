@@ -350,6 +350,15 @@
   </div>
 </div>
 
+<!-- Modal detalle de factura -->
+<div class="overlay" id="overlayFacturaDetalle">
+  <div class="modal wide">
+    <div class="modal-head"><h2 id="facturaDetalleTitle">Factura</h2><button class="modal-close" id="facturaDetalleClose">&times;</button></div>
+    <div class="modal-body" id="facturaDetalleBody"></div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="facturaDetalleCloseBtn">Cerrar</button></div>
+  </div>
+</div>
+
 <!-- Modal importar factura -->
 <div class="overlay" id="overlayFactura">
   <div class="modal wide">
@@ -647,9 +656,28 @@ function renderFinTablaFacturas(){
     if(i.fiscal) grupos[key].total += i.fiscal.moi;
   });
   const filas = Object.entries(grupos);
-  el('finTablaFacturas').innerHTML = filas.length ? `<thead><tr><th>Factura / UUID</th><th>Proveedor</th><th class="num">Equipos</th><th class="num">Valor total</th><th>Folios</th></tr></thead><tbody>${
-    filas.map(([uuid, g]) => `<tr><td class="serie">${escapeHtml(uuid)}</td><td>${escapeHtml(g.proveedor)||'—'}</td><td class="num">${g.folios.length}</td><td class="num">${fmtMoney(g.total)}</td><td>${g.folios.map(escapeHtml).join(', ')}</td></tr>`).join('')
+  el('finTablaFacturas').innerHTML = filas.length ? `<thead><tr><th>Factura / UUID</th><th>Proveedor</th><th>Fecha</th><th class="num">Equipos</th><th class="num">Valor total</th><th></th></tr></thead><tbody>${
+    filas.map(([uuid, g]) => `<tr><td class="serie">${escapeHtml(uuid)}</td><td>${escapeHtml(g.proveedor)||'—'}</td><td>${fmtDate(g.fecha)}</td><td class="num">${g.folios.length}</td><td class="num">${fmtMoney(g.total)}</td><td><button class="btn btn-ghost btn-sm" data-verfactura="${escapeHtml(uuid)}">Ver equipos</button></td></tr>`).join('')
   }</tbody>` : `<tbody><tr><td style="padding:10px;color:var(--ink-faint);">Ningún equipo tiene factura asociada todavía.</td></tr></tbody>`;
+  document.querySelectorAll('[data-verfactura]').forEach(b => b.onclick = () => openFacturaDetalle(b.dataset.verfactura));
+}
+function openFacturaDetalle(uuid){
+  const eqs = equipos.filter(i => i.numeroFactura === uuid);
+  if(!eqs.length) return;
+  const g0 = eqs[0];
+  el('facturaDetalleTitle').textContent = `Factura ${uuid}`;
+  let total = 0;
+  eqs.forEach(i => { if(i.fiscal) total += i.fiscal.moi; });
+  el('facturaDetalleBody').innerHTML = `<div class="fichagrid" style="margin-bottom:14px;">
+      <div class="row"><div class="k">Proveedor</div><div class="v" style="text-align:left">${escapeHtml(g0.proveedor)||'—'}</div></div>
+      <div class="row"><div class="k">RFC</div><div class="v" style="text-align:left">${escapeHtml(g0.rfcProveedor)||'—'}</div></div>
+      <div class="row"><div class="k">Fecha de factura</div><div class="v" style="text-align:left">${fmtDate(g0.fechaFactura)}</div></div>
+      <div class="row"><div class="k">Valor total</div><div class="v" style="text-align:left">${fmtMoney(total)}</div></div>
+    </div>
+    <table class="minitable"><thead><tr><th>Folio</th><th>Categoría</th><th>Marca / Modelo</th><th>Serie</th><th>Empleado</th><th>Estado</th><th class="num">Monto</th></tr></thead><tbody>
+      ${eqs.map(i => `<tr><td class="serie">${escapeHtml(i.folio)}</td><td><span class="badge ${catClass(i.categoria)}">${escapeHtml(i.categoria)}</span></td><td>${escapeHtml(i.marca)||''} ${escapeHtml(i.modelo)||''}</td><td class="serie">${escapeHtml(i.serie)||'—'}</td><td>${escapeHtml(empleadoLabel(i.empleadoId))||'Sin asignar'}</td><td><span class="badge ${estadoClass(i.estado)}">${escapeHtml(i.estado)}</span></td><td class="num">${i.fiscal ? fmtMoney(i.fiscal.moi) : '—'}</td></tr>`).join('')}
+    </tbody></table>`;
+  el('overlayFacturaDetalle').classList.add('show');
 }
 function renderFinanzasView(){
   let moiTotal=0, depTotal=0, pendTotal=0, alertas=0;
@@ -917,6 +945,17 @@ function getXmlEls(doc, names){
   for(const n of names){ const els = doc.getElementsByTagName(n); if(els.length) return Array.from(els); }
   return [];
 }
+const MARCAS_CONOCIDAS = ['Dell','HP','Hewlett Packard','Lenovo','Apple','Samsung','LG','Acer','Asus','MSI','Microsoft','Toshiba','Sony','Huawei','Xiaomi','Motorola','ViewSonic','BenQ','Logitech','Epson','Canon','Brother','Google'];
+function guessMarcaModelo(desc){
+  const sinSeries = (desc||'').replace(/(?:N\/?S|S\/N|SERIE(?:S)?|IMEI)\s*[:\-]?.*/i, '').trim();
+  let marca = '', resto = sinSeries;
+  for(const m of MARCAS_CONOCIDAS){
+    const re = new RegExp('\\b'+m.replace(/\s+/g,'\\s+')+'\\b', 'i');
+    if(re.test(sinSeries)){ marca = m; resto = sinSeries.replace(re, '').trim(); break; }
+  }
+  const modelo = resto.split(/\s+/).slice(0, 6).join(' ').trim();
+  return { marca, modelo };
+}
 function guessCategoria(desc){
   const d = (desc||'').toLowerCase();
   if(/laptop|notebook|port[aá]til/.test(d)) return {categoria:'Laptop', subtipo:''};
@@ -963,11 +1002,12 @@ function buildFacturaRows(header, conceptos){
   let n = 1;
   conceptos.forEach(c => {
     const { categoria, subtipo } = guessCategoria(c.descripcion);
+    const { marca, modelo } = guessMarcaModelo(c.descripcion);
     const series = extraerSeries(c.descripcion, c.cantidad);
     for(let i=0;i<c.cantidad;i++){
       rows.push({
         folio: `INV-${shortId}-${String(n).padStart(2,'0')}`,
-        categoria, subtipo, descripcion: c.descripcion,
+        categoria, subtipo, marca, modelo, descripcion: c.descripcion,
         serie: series[i] || '',
         montoUnitario: c.valorUnitario ? c.valorUnitario.toFixed(2) : '',
         tasaDepreciacion: TASA_SUGERIDA[categoria] ?? 10,
@@ -1000,15 +1040,16 @@ function renderFacturaHeaderInfo(){
 function renderFacturaRowsTable(){
   const catOpts = CATEGORIAS.map(c => `<option value="${c}">${c}</option>`).join('');
   el('facturaRowsTable').innerHTML = `<thead><tr>
-    <th>Folio</th><th>Categoría</th><th>Subtipo</th><th>Serie</th><th class="num">Monto unit.</th><th class="num">Tasa %</th><th></th>
+    <th>Folio</th><th>Categoría</th><th>Marca</th><th>Modelo</th><th>Serie</th><th class="num">Monto unit.</th><th class="num">Tasa %</th><th></th>
   </tr></thead><tbody>${facturaRows.map((r,idx) => `
     <tr>
-      <td><input type="text" data-fidx="${idx}" data-ffield="folio" value="${escapeHtml(r.folio)}" style="width:140px;"></td>
-      <td><select data-fidx="${idx}" data-ffield="categoria" style="width:100px;">${CATEGORIAS.map(c=>`<option value="${c}" ${r.categoria===c?'selected':''}>${c}</option>`).join('')}</select></td>
-      <td><input type="text" data-fidx="${idx}" data-ffield="subtipo" value="${escapeHtml(r.subtipo)}" style="width:110px;" title="${escapeHtml(r.descripcion)}"></td>
-      <td><input type="text" data-fidx="${idx}" data-ffield="serie" value="${escapeHtml(r.serie)}" style="width:130px;" placeholder="Sin serie detectada"></td>
-      <td><input type="number" step="0.01" data-fidx="${idx}" data-ffield="montoUnitario" value="${escapeHtml(r.montoUnitario)}" style="width:100px;"></td>
-      <td><input type="number" data-fidx="${idx}" data-ffield="tasaDepreciacion" value="${escapeHtml(r.tasaDepreciacion)}" style="width:70px;"></td>
+      <td><input type="text" data-fidx="${idx}" data-ffield="folio" value="${escapeHtml(r.folio)}" style="width:130px;"></td>
+      <td><select data-fidx="${idx}" data-ffield="categoria" style="width:95px;">${CATEGORIAS.map(c=>`<option value="${c}" ${r.categoria===c?'selected':''}>${c}</option>`).join('')}</select></td>
+      <td><input type="text" data-fidx="${idx}" data-ffield="marca" value="${escapeHtml(r.marca)}" style="width:90px;" placeholder="Marca" title="${escapeHtml(r.descripcion)}"></td>
+      <td><input type="text" data-fidx="${idx}" data-ffield="modelo" value="${escapeHtml(r.modelo)}" style="width:130px;" placeholder="Modelo" title="${escapeHtml(r.descripcion)}"></td>
+      <td><input type="text" data-fidx="${idx}" data-ffield="serie" value="${escapeHtml(r.serie)}" style="width:120px;" placeholder="Sin serie detectada"></td>
+      <td><input type="number" step="0.01" data-fidx="${idx}" data-ffield="montoUnitario" value="${escapeHtml(r.montoUnitario)}" style="width:95px;"></td>
+      <td><input type="number" data-fidx="${idx}" data-ffield="tasaDepreciacion" value="${escapeHtml(r.tasaDepreciacion)}" style="width:65px;"></td>
       <td><button class="btn btn-danger btn-sm" data-frmrow="${idx}">Quitar</button></td>
     </tr>`).join('')}</tbody>`;
   document.querySelectorAll('[data-fidx]').forEach(inp => inp.addEventListener('change', e => {
@@ -1021,7 +1062,7 @@ function renderFacturaRowsTable(){
   });
 }
 function addFacturaRow(){
-  facturaRows.push({ folio:`INV-NUEVO-${facturaRows.length+1}`, categoria:'Otro', subtipo:'', descripcion:'', serie:'', montoUnitario:'', tasaDepreciacion:10 });
+  facturaRows.push({ folio:`INV-NUEVO-${facturaRows.length+1}`, categoria:'Otro', subtipo:'', marca:'', modelo:'', descripcion:'', serie:'', montoUnitario:'', tasaDepreciacion:10 });
   renderFacturaRowsTable();
 }
 function closeFacturaModal(){ el('overlayFactura').classList.remove('show'); }
@@ -1031,6 +1072,7 @@ async function crearDesdeFactura(){
   for(const r of facturaRows){
     const data = {
       folio: r.folio, categoria: r.categoria, subtipo: r.categoria==='Otro' ? r.subtipo : '',
+      marca: r.marca, modelo: r.modelo,
       serie: r.serie, estado: 'Activo',
       proveedor: facturaHeader.proveedor, rfcProveedor: facturaHeader.rfcProveedor,
       numeroFactura: facturaHeader.numeroFactura, fechaFactura: facturaHeader.fechaFactura,
@@ -1159,6 +1201,9 @@ function bindEvents(){
   el('facturaClose').onclick = closeFacturaModal;
   el('facturaCancelBtn').onclick = closeFacturaModal;
   el('overlayFactura').onclick = e => { if(e.target===el('overlayFactura')) closeFacturaModal(); };
+  el('facturaDetalleClose').onclick = () => el('overlayFacturaDetalle').classList.remove('show');
+  el('facturaDetalleCloseBtn').onclick = () => el('overlayFacturaDetalle').classList.remove('show');
+  el('overlayFacturaDetalle').onclick = e => { if(e.target===el('overlayFacturaDetalle')) el('overlayFacturaDetalle').classList.remove('show'); };
   el('btnAddFacturaRow').onclick = addFacturaRow;
   el('btnCrearDesdeFactura').onclick = crearDesdeFactura;
   el('btnEmpNew').onclick = () => openEmpModal(null);
