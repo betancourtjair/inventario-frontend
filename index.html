@@ -946,13 +946,16 @@ function getXmlEls(doc, names){
   return [];
 }
 const MARCAS_CONOCIDAS = ['Dell','HP','Hewlett Packard','Lenovo','Apple','Samsung','LG','Acer','Asus','MSI','Microsoft','Toshiba','Sony','Huawei','Xiaomi','Motorola','ViewSonic','BenQ','Logitech','Epson','Canon','Brother','Google'];
+const PALABRAS_TIPO_PRODUCTO = ['laptop','notebook','port[aá]til','monitor','pantalla','celular','tel[eé]fono','smartphone','cpu','torre','desktop','impresora','servidor','tablet','equipo\\s+de\\s+c[oó]mputo','equipo'];
 function guessMarcaModelo(desc){
-  const sinSeries = (desc||'').replace(/(?:N\/?S|S\/N|SERIE(?:S)?|IMEI)\s*[:\-]?.*/i, '').trim();
+  let sinSeries = (desc||'').replace(/(?:N\/?S|S\/N|SERIE(?:S)?|IMEI)\s*[:\-]?.*/i, '').trim();
   let marca = '', resto = sinSeries;
   for(const m of MARCAS_CONOCIDAS){
     const re = new RegExp('\\b'+m.replace(/\s+/g,'\\s+')+'\\b', 'i');
     if(re.test(sinSeries)){ marca = m; resto = sinSeries.replace(re, '').trim(); break; }
   }
+  const reTipo = new RegExp('^(?:'+PALABRAS_TIPO_PRODUCTO.join('|')+')\\s+', 'i');
+  resto = resto.replace(reTipo, '').trim();
   const modelo = resto.split(/\s+/).slice(0, 6).join(' ').trim();
   return { marca, modelo };
 }
