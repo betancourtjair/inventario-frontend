@@ -191,6 +191,7 @@
     </div>
     <div class="userchip">
       <span class="who" id="whoAmI"></span>
+      <button class="btn-logout" id="btnChangePass">Cambiar contraseña</button>
       <button class="btn-logout" id="btnLogout">Salir</button>
     </div>
   </div>
@@ -232,6 +233,7 @@
     <div class="subnav" id="adminSubnav">
       <div class="navitem active" data-sub="empleados">Empleados</div>
       <div class="navitem" data-sub="limites">Límites y duplicados</div>
+      <div class="navitem" data-sub="usuarios">Usuarios del sistema</div>
       <div class="navitem" data-sub="config">Configuración</div>
     </div>
 
@@ -260,6 +262,20 @@
         <button class="btn btn-primary" id="btnSaveLimites">Guardar límites</button>
       </div>
       <div class="finblock"><h3>Empleados con activos duplicados</h3><table class="minitable" id="dupTable"></table></div>
+    </div>
+
+    <div class="subview" id="sub-usuarios">
+      <div class="finblock">
+        <h3>Usuarios con acceso al sistema</h3>
+        <p style="color:var(--ink-soft);font-size:12.5px;margin-top:-6px;">Roles: <strong>admin</strong> (control total) o <strong>lectura</strong> (solo ver, sin poder editar nada).</p>
+        <div class="inlineform">
+          <input type="text" id="usrCorreo" placeholder="correo@fpt.com.mx">
+          <select id="usrRol"><option value="admin">admin</option><option value="lectura">lectura</option></select>
+          <input type="password" id="usrPassword" placeholder="Contraseña inicial">
+          <button class="btn btn-primary btn-sm" id="btnAddUsuario">+ Crear usuario</button>
+        </div>
+        <table class="minitable" id="usuariosTable"></table>
+      </div>
     </div>
 
     <div class="subview" id="sub-config">
@@ -302,6 +318,19 @@
   <div class="modal"><div class="modal-head"><h2 id="empModalTitle">Nuevo empleado</h2><button class="modal-close" id="empModalClose">&times;</button></div>
     <div class="modal-body"><form id="empForm" class="formgrid"></form></div>
     <div class="modal-foot"><button class="btn btn-ghost" id="empBtnCancel">Cancelar</button><button class="btn btn-primary" id="empBtnSave">Guardar</button></div>
+  </div>
+</div>
+
+<!-- Modal cambiar contraseña -->
+<div class="overlay" id="overlayPass">
+  <div class="modal"><div class="modal-head"><h2>Cambiar contraseña</h2><button class="modal-close" id="passClose">&times;</button></div>
+    <div class="modal-body">
+      <div class="err" id="passErr" style="color:var(--red);font-size:12.5px;min-height:18px;margin-bottom:6px;"></div>
+      <div class="field"><label>Contraseña actual</label><input type="password" id="passActual"></div>
+      <div class="field"><label>Contraseña nueva</label><input type="password" id="passNueva"></div>
+      <div class="field"><label>Confirmar contraseña nueva</label><input type="password" id="passConfirma"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="passCancel">Cancelar</button><button class="btn btn-primary" id="passGuardar">Guardar</button></div>
   </div>
 </div>
 
@@ -370,6 +399,57 @@ function logout(){
   el('loginView').classList.remove('hidden');
 }
 
+/* ---------------- CAMBIAR CONTRASEÑA ---------------- */
+function openChangePass(){
+  el('passErr').textContent = '';
+  el('passActual').value = ''; el('passNueva').value = ''; el('passConfirma').value = '';
+  el('overlayPass').classList.add('show');
+}
+function closeChangePass(){ el('overlayPass').classList.remove('show'); }
+async function saveChangePass(){
+  el('passErr').textContent = '';
+  const actual = el('passActual').value, nueva = el('passNueva').value, confirma = el('passConfirma').value;
+  if(!actual || !nueva){ el('passErr').textContent = 'Completa todos los campos'; return; }
+  if(nueva.length < 6){ el('passErr').textContent = 'La nueva contraseña debe tener al menos 6 caracteres'; return; }
+  if(nueva !== confirma){ el('passErr').textContent = 'La confirmación no coincide'; return; }
+  try{
+    await api('/api/auth/cambiar-password', {method:'POST', body:{passwordActual: actual, passwordNueva: nueva}});
+    closeChangePass(); showToast('Contraseña actualizada');
+  }catch(e){ el('passErr').textContent = e.message; }
+}
+
+/* ---------------- ADMIN · USUARIOS DEL SISTEMA ---------------- */
+async function renderAdminUsuarios(){
+  let usuarios = [];
+  try{ usuarios = await api('/api/auth/usuarios'); }catch(e){ showToast(e.message, true); return; }
+  el('usuariosTable').innerHTML = `<thead><tr><th>Correo</th><th>Rol</th><th></th></tr></thead><tbody>${
+    usuarios.map(u => `<tr><td>${escapeHtml(u.correo)}</td><td><span class="badge ${u.rol==='admin'?'activo':'resguardo'}">${u.rol}</span></td>
+      <td><div class="rowactions">
+        <button class="btn btn-ghost btn-sm" data-resetpass="${u.id}" data-correo="${escapeHtml(u.correo)}">Resetear contraseña</button>
+        <button class="btn btn-danger btn-sm" data-deluser="${u.id}">Eliminar</button>
+      </div></td></tr>`).join('')}</tbody>`;
+  document.querySelectorAll('[data-resetpass]').forEach(b => b.onclick = async () => {
+    const nueva = prompt(`Nueva contraseña para ${b.dataset.correo}:`);
+    if(!nueva) return;
+    try{ await api(`/api/auth/usuarios/${b.dataset.resetpass}/password`, {method:'PUT', body:{password: nueva}}); showToast('Contraseña reseteada'); }
+    catch(e){ showToast(e.message, true); }
+  });
+  document.querySelectorAll('[data-deluser]').forEach(b => b.onclick = async () => {
+    if(!confirm('¿Eliminar este usuario del sistema?')) return;
+    try{ await api(`/api/auth/usuarios/${b.dataset.deluser}`, {method:'DELETE'}); renderAdminUsuarios(); showToast('Eliminado'); }
+    catch(e){ showToast(e.message, true); }
+  });
+}
+async function addUsuario(){
+  const correo = el('usrCorreo').value.trim(), rolNuevo = el('usrRol').value, password = el('usrPassword').value;
+  if(!correo || !password){ showToast('Correo y contraseña son obligatorios', true); return; }
+  try{
+    await api('/api/auth/usuarios', {method:'POST', body:{correo, rol: rolNuevo, password}});
+    el('usrCorreo').value=''; el('usrPassword').value='';
+    renderAdminUsuarios(); showToast('Usuario creado');
+  }catch(e){ showToast(e.message, true); }
+}
+
 /* ---------------- CARGA ---------------- */
 async function loadAll(){
   equipos = await api('/api/equipos');
@@ -423,7 +503,7 @@ function showView(view){
   el('view-'+view).classList.add('active');
   document.querySelectorAll('#mainNav .navitem').forEach(n => n.classList.toggle('active', n.dataset.view===view));
   if(view==='finanzas') renderFinanzasView();
-  if(view==='admin'){ renderAdminEmpleados(); renderAdminLimites(); renderAdminConfig(); }
+  if(view==='admin'){ renderAdminEmpleados(); renderAdminLimites(); renderAdminConfig(); renderAdminUsuarios(); }
 }
 function showAdminSub(sub){
   document.querySelectorAll('.subview').forEach(v => v.classList.remove('active'));
@@ -863,7 +943,12 @@ function bindEvents(){
   el('btnRunPrestamos').onclick = runPrestamos;
   el('btnLogin').onclick = login;
   el('loginPassword').addEventListener('keydown', e => { if(e.key==='Enter') login(); });
+  el('btnAddUsuario').onclick = addUsuario;
   el('btnLogout').onclick = logout;
+  el('btnChangePass').onclick = openChangePass;
+  el('passClose').onclick = closeChangePass;
+  el('passCancel').onclick = closeChangePass;
+  el('passGuardar').onclick = saveChangePass;
 }
 
 async function boot(){
