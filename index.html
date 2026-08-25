@@ -257,6 +257,9 @@
       <div class="toolbar">
         <input type="text" id="empSearchInput" placeholder="Buscar empleado...">
         <div class="spacer"></div>
+        <button class="btn btn-ghost" id="btnPlantillaEmpXML">Descargar plantilla XML</button>
+        <button class="btn btn-ghost" id="btnEmpImportXML">Importar XML</button>
+        <input type="file" id="fileEmpImportXML" accept=".xml">
         <button class="btn btn-primary" id="btnEmpNew">+ Nuevo empleado</button>
       </div>
       <div class="tablewrap"><div style="overflow-x:auto;">
@@ -1126,6 +1129,51 @@ function openEmpModal(id){
     + `<div class="field"><label>Estado</label><select id="ef_estado"><option value="Activo" ${emp&&emp.estado==='Activo'?'selected':''}>Activo</option><option value="Baja" ${emp&&emp.estado==='Baja'?'selected':''}>Baja</option></select></div>`;
   el('overlayEmp').classList.add('show');
 }
+function descargarPlantillaEmpXML(){
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Plantilla de carga masiva de empleados. -->
+<!-- id: identificador único (ej. EMP-0001) — obligatorio -->
+<!-- nombre y correo — obligatorios -->
+<!-- departamento, puesto — opcionales -->
+<!-- estado: "Activo" o "Baja" — si se omite, se usa "Activo" -->
+<!-- Borra el <Empleado> de ejemplo antes de importar. -->
+<Empleados>
+  <Empleado id="EMP-0001" nombre="Nombre Completo de Ejemplo" correo="correo@fpt.com.mx" departamento="Recursos Humanos" puesto="Analista" estado="Activo"/>
+</Empleados>`;
+  const blob = new Blob([xml], {type:'application/xml;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='plantilla_empleados.xml'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('Plantilla descargada — borra el renglón de ejemplo antes de importar');
+}
+function parseEmpleadosXML(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  if(doc.querySelector('parsererror')) throw new Error('El archivo no es un XML válido');
+  const nodos = Array.from(doc.getElementsByTagName('Empleado'));
+  if(!nodos.length) throw new Error('No se encontró ningún <Empleado> en el archivo');
+  return nodos.map(n => ({
+    id: n.getAttribute('id') || '',
+    nombre: n.getAttribute('nombre') || '',
+    correo: n.getAttribute('correo') || '',
+    departamento: n.getAttribute('departamento') || '',
+    puesto: n.getAttribute('puesto') || '',
+    estado: n.getAttribute('estado') || 'Activo',
+  }));
+}
+async function handleEmpImportXML(file){
+  let filas;
+  try{ filas = parseEmpleadosXML(await file.text()); }
+  catch(e){ showToast('No se pudo leer el archivo: '+e.message, true); return; }
+  let creados = 0, omitidos = 0, fallidos = [];
+  for(const f of filas){
+    if(!f.id || !f.nombre || !f.correo){ omitidos++; continue; }
+    try{ await api('/api/empleados', {method:'POST', body:f}); creados++; }
+    catch(e){ omitidos++; fallidos.push(`${f.id}: ${e.message}`); }
+  }
+  await loadAll(); renderAdminEmpleados(); renderInventarioView();
+  showToast(`Importados ${creados} empleado(s)${omitidos ? `, ${omitidos} omitido(s)` : ''}`, fallidos.length>0);
+  if(fallidos.length) console.warn('Errores al importar empleados:', fallidos);
+}
 async function saveEmpleado(){
   const data = {}; EMP_FIELDS.forEach(f => data[f.key] = document.getElementById(`ef_${f.key}`).value.trim());
   data.estado = document.getElementById('ef_estado').value;
@@ -1218,6 +1266,9 @@ function bindEvents(){
   el('btnAddFacturaRow').onclick = addFacturaRow;
   el('btnCrearDesdeFactura').onclick = crearDesdeFactura;
   el('btnEmpNew').onclick = () => openEmpModal(null);
+  el('btnPlantillaEmpXML').onclick = descargarPlantillaEmpXML;
+  el('btnEmpImportXML').onclick = () => el('fileEmpImportXML').click();
+  el('fileEmpImportXML').onchange = e => { if(e.target.files[0]) handleEmpImportXML(e.target.files[0]); e.target.value=''; };
   el('empSearchInput').oninput = renderAdminEmpleados;
   el('btnAddLimSubtipo').onclick = addLimiteSubtipo;
   el('btnSaveLimites').onclick = saveLimites;
@@ -1235,7 +1286,7 @@ function bindEvents(){
 
 function applyRolUI(){
   const escritura = puedeEscribir();
-  ['btnNew','btnImport','btnImportFactura','btnEmpNew'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
+  ['btnNew','btnImport','btnImportFactura','btnEmpNew','btnEmpImportXML'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
   if(!escritura){
     el('whoAmI').innerHTML = `Sesión: ${rol} <span class="badge resguardo" style="margin-left:6px;">Solo lectura</span>`;
   }
