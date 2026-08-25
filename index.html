@@ -853,7 +853,15 @@ async function saveItem(){
 async function deleteItem(folio){
   if(!confirm(`¿Eliminar el equipo "${folio}"?`)) return;
   try{ await api(`/api/equipos/${folio}`, {method:'DELETE'}); await loadAll(); renderInventarioView(); showToast('Eliminado'); }
-  catch(e){ showToast(e.message, true); }
+  catch(e){
+    const esBloqueoAuditoria = /historial de responsivas/i.test(e.message);
+    if(esBloqueoAuditoria && rol==='super_admin' && confirm(`${e.message}\n\n¿Quieres forzar el borrado de todas formas? Esto también eliminará el historial de responsivas de este equipo — no se puede deshacer.`)){
+      try{ await api(`/api/equipos/${folio}/force`, {method:'DELETE'}); await loadAll(); renderInventarioView(); showToast('Eliminado (incluyendo su historial de responsivas)'); }
+      catch(e2){ showToast(e2.message, true); }
+    } else {
+      showToast(e.message, true);
+    }
+  }
 }
 
 /* ---------------- FICHA ---------------- */
