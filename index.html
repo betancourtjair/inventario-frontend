@@ -102,6 +102,7 @@
   .badge.prestado{background:var(--blue-soft);color:var(--blue);}
   .badge.baja{background:var(--red-soft);color:var(--red);}
   .badge.cat-laptop{background:var(--accent-soft);color:var(--accent-dark);}
+  .badge.cat-cpu{background:#DCE7F0;color:#2C5A7A;}
   .badge.cat-celular{background:var(--blue-soft);color:var(--blue);}
   .badge.cat-monitor{background:var(--amber-soft);color:var(--amber);}
   .badge.cat-otro{background:#E3DEE8;color:#4A3D57;}
@@ -222,6 +223,7 @@
       <input type="text" id="searchInput" placeholder="Buscar por folio, marca, modelo, serie, empleado...">
       <select id="filterEstado"><option value="">Todos los estados</option></select>
       <div class="spacer"></div>
+      <button class="btn btn-ghost" id="btnPlantillaCSV">Descargar plantilla CSV</button>
       <button class="btn btn-ghost" id="btnImport">Importar CSV</button>
       <input type="file" id="fileImport" accept=".csv">
       <button class="btn btn-ghost" id="btnImportFactura">Importar factura (XML)</button>
@@ -385,12 +387,19 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const CATEGORIAS = ['Laptop','Celular','Monitor','Otro'];
+const CATEGORIAS = ['Laptop','CPU','Celular','Monitor','Otro'];
 const ESTADOS = ['Activo','En reparación','En resguardo','Prestado','Baja'];
-const TASA_SUGERIDA = {Laptop:30, Monitor:30, Celular:25, Otro:10};
+const TASA_SUGERIDA = {Laptop:30, CPU:30, Monitor:30, Celular:25, Otro:10};
 
 let token = localStorage.getItem('inv_token') || null;
 let rol = localStorage.getItem('inv_rol') || null;
+function puedeEscribir(){ return rol === 'admin' || rol === 'super_admin'; }
+function lockIfReadOnly(containerId){
+  if(puedeEscribir()) return;
+  const c = document.getElementById(containerId);
+  if(!c) return;
+  c.querySelectorAll('input, select, textarea, button').forEach(node => node.disabled = true);
+}
 let equipos = [], employees = [], limites = {categorias:{}, subtipos:{}}, config = {};
 let editingFolio = null, editingEmpId = null, currentPhotos = [];
 let categoryTab = 'Todas', sortKey = 'folio', sortDir = 'asc';
@@ -495,7 +504,7 @@ async function loadAll(){
 }
 
 function estadoClass(e){ return {'Activo':'activo','En reparación':'reparacion','En resguardo':'resguardo','Prestado':'prestado','Baja':'baja'}[e] || 'resguardo'; }
-function catClass(c){ return {'Laptop':'cat-laptop','Celular':'cat-celular','Monitor':'cat-monitor','Otro':'cat-otro'}[c] || 'cat-otro'; }
+function catClass(c){ return {'Laptop':'cat-laptop','CPU':'cat-cpu','Celular':'cat-celular','Monitor':'cat-monitor','Otro':'cat-otro'}[c] || 'cat-otro'; }
 function getEmpleado(id){ return employees.find(e => e.id === id); }
 function empleadoLabel(id){ const e = getEmpleado(id); if(!e) return ''; return e.estado==='Baja' ? `${e.nombre} (baja)` : e.nombre; }
 function getLimite(categoria, subtipo){
@@ -555,7 +564,7 @@ function buildFilterOptions(){ const fe=el('filterEstado'); if(fe.children.lengt
 function renderTabs(){
   const counts = {Todas: equipos.length};
   CATEGORIAS.forEach(c => counts[c] = equipos.filter(i => i.categoria===c).length);
-  const labelMap = {Todas:'Todas', Laptop:'Laptops', Celular:'Celulares', Monitor:'Monitores', Otro:'Otros'};
+  const labelMap = {Todas:'Todas', Laptop:'Laptops', CPU:'CPUs', Celular:'Celulares', Monitor:'Monitores', Otro:'Otros'};
   el('tabs').innerHTML = ['Todas', ...CATEGORIAS].map(t => `<div class="tab ${categoryTab===t?'active':''}" data-tab="${t}">${labelMap[t]}<span class="cnt">${counts[t]}</span></div>`).join('');
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => { categoryTab=t.dataset.tab; renderInventarioView(); });
 }
@@ -602,7 +611,7 @@ function renderTable(){
       const gl = garantiaLabel(i.garantia); const pl = prestamoLabel(i.prestamo);
       return `<tr>
         <td class="folio">${escapeHtml(i.folio)}${dupSet.has(i.folio)?' <span class="badge dup">dup</span>':''}</td>
-        <td><span class="badge ${catClass(i.categoria)}">${escapeHtml(i.categoria)}</span>${i.subtipo?`<span class="sublabel">${escapeHtml(i.subtipo)}</span>`:''}</td>
+        <td><span class="badge ${catClass(i.categoria)}">${escapeHtml(i.categoria)}</span>${i.subtipo?`<span class="sublabel">${escapeHtml(i.subtipo)}</span>`:''}${i.categoria==='Celular' && i.componenteCelular && i.componenteCelular!=='Equipo y SIM' ? `<span class="sublabel">${escapeHtml(i.componenteCelular)}</span>` : ''}</td>
         <td>${escapeHtml(i.marca)}${i.modelo?' · '+escapeHtml(i.modelo):''}</td>
         <td class="serie">${escapeHtml(i.serie)}</td>
         <td>${escapeHtml(empleadoLabel(i.empleadoId))||'Sin asignar'}</td>
@@ -613,8 +622,8 @@ function renderTable(){
         <td><div class="rowactions">
           ${i.empleadoId ? `<button class="btn btn-ghost btn-sm" data-carta="${escapeHtml(i.folio)}">Carta</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-ficha="${escapeHtml(i.folio)}">Ficha</button>
-          <button class="btn btn-ghost btn-sm" data-edit="${escapeHtml(i.folio)}">Editar</button>
-          <button class="btn btn-danger btn-sm" data-del="${escapeHtml(i.folio)}">Eliminar</button>
+          ${puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-edit="${escapeHtml(i.folio)}">Editar</button>
+          <button class="btn btn-danger btn-sm" data-del="${escapeHtml(i.folio)}">Eliminar</button>` : ''}
         </div></td>
       </tr>`;
     }).join('');
@@ -684,6 +693,7 @@ const FIELD_SECTIONS = [
     {key:'accesorios', label:'Accesorios', type:'text'},
   ]},
   { title:'Asignación', fields:[
+    {key:'componenteCelular', label:'Qué se le asigna', type:'select', options:['Equipo y SIM','Solo equipo','Solo SIM'], showIf:'Celular'},
     {key:'empleadoId', label:'Empleado asignado', type:'employee'},
     {key:'enviarCorreo', label:'Enviar responsiva por correo al asignar', type:'checkbox'},
   ]},
@@ -754,6 +764,8 @@ function buildForm(item){
   function updateDependents(){
     document.getElementById('wrap_subtipo').style.display = (catSel.value==='Otro') ? '' : 'none';
     document.getElementById('wrap_fechaDevolucionEsperada').style.display = (estadoSel.value==='Prestado') ? '' : 'none';
+    const wrapComp = document.getElementById('wrap_componenteCelular');
+    if(wrapComp) wrapComp.style.display = (catSel.value==='Celular') ? '' : 'none';
     if(document.getElementById('hint_tasaDepreciacion')) document.getElementById('hint_tasaDepreciacion').textContent = catSel.value ? `Sugerido: ${TASA_SUGERIDA[catSel.value]}%` : '';
     if(catSel.value && !tasaInput.dataset.userTouched && !tasaInput.value) tasaInput.value = TASA_SUGERIDA[catSel.value] ?? '';
   }
@@ -867,9 +879,22 @@ function parseCSVLine(line){
     else { if(c==='"')inQ=true; else if(c===','){out.push(cur);cur='';} else cur+=c; } }
   out.push(cur); return out;
 }
+function descargarPlantillaCSV(){
+  const headers = ['folio','categoria','subtipo','marca','modelo','serie','estado','ubicacion','nombreEquipo','condicion','accesorios','componenteCelular','empleadoId','proveedor','rfcProveedor','numeroFactura','fechaFactura','fechaInicioUso','montoFactura','tasaDepreciacion','garantiaMeses','fechaDevolucionEsperada','notas'];
+  const ejemplo = ['LAP-0001','Laptop','','Dell','Latitude 5440','ABC123456','Activo','Piso 3','LAP-JPEREZ','Nuevo','Cargador y mochila','','','Proveedor SA de CV','ABC010101AAA','UUID-DE-LA-FACTURA','2026-01-15','2026-01-15','15000.00','30','12','','Ejemplo de renglón — bórralo antes de importar'];
+  const notaCategorias = `# categoria: Laptop, CPU, Celular, Monitor u Otro`;
+  const notaComponente = `# componenteCelular (solo si categoria=Celular): "Equipo y SIM", "Solo equipo" o "Solo SIM"`;
+  const notaEstado = `# estado: Activo, En reparación, En resguardo, Prestado o Baja`;
+  const csv = [notaCategorias, notaComponente, notaEstado, headers.join(','), ejemplo.map(v=>/[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='plantilla_inventario_equipos.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('Plantilla descargada — borra las líneas que empiezan con # y el renglón de ejemplo antes de importar');
+}
 async function importCSV(file){
   const text = await file.text();
-  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length && !l.trim().startsWith('#'));
   if(lines.length<2){ showToast('Archivo vacío', true); return; }
   const headers = parseCSVLine(lines[0]).map(h=>h.trim());
   const rows = [];
@@ -895,6 +920,7 @@ function getXmlEls(doc, names){
 function guessCategoria(desc){
   const d = (desc||'').toLowerCase();
   if(/laptop|notebook|port[aá]til/.test(d)) return {categoria:'Laptop', subtipo:''};
+  if(/\bcpu\b|torre|desktop|escritorio/.test(d)) return {categoria:'CPU', subtipo:''};
   if(/monitor|pantalla|display/.test(d)) return {categoria:'Monitor', subtipo:''};
   if(/celular|tel[eé]fono|smartphone|iphone|galaxy/.test(d)) return {categoria:'Celular', subtipo:''};
   const primeras = (desc||'').trim().split(/\s+/).slice(0,3).join(' ');
@@ -1030,7 +1056,7 @@ function renderAdminEmpleados(){
     <td>${escapeHtml(e.departamento)||'—'}</td><td class="serie">${escapeHtml(e.correo)}</td>
     <td><span class="badge ${e.estado==='Baja'?'baja':'activo'}">${escapeHtml(e.estado)}</span></td>
     <td>${e._count ? e._count.equipos : 0}</td>
-    <td><div class="rowactions"><button class="btn btn-ghost btn-sm" data-empedit="${escapeHtml(e.id)}">Editar</button><button class="btn btn-danger btn-sm" data-empdel="${escapeHtml(e.id)}">Eliminar</button></div></td>
+    <td><div class="rowactions">${puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-empedit="${escapeHtml(e.id)}">Editar</button><button class="btn btn-danger btn-sm" data-empdel="${escapeHtml(e.id)}">Eliminar</button>` : '<span class="hint">Solo lectura</span>'}</div></td>
   </tr>`).join('') : `<tr><td colspan="7"><div class="empty"><strong>Sin empleados</strong></div></td></tr>`;
   document.querySelectorAll('[data-empedit]').forEach(b => b.onclick = () => openEmpModal(b.dataset.empedit));
   document.querySelectorAll('[data-empdel]').forEach(b => b.onclick = () => deleteEmpleado(b.dataset.empdel));
@@ -1078,6 +1104,7 @@ function renderAdminLimites(){
   const dups = computeDuplicados();
   el('dupTable').innerHTML = dups.length ? `<thead><tr><th>Empleado</th><th>Categoría</th><th class="num">Cant.</th><th class="num">Límite</th><th>Folios</th></tr></thead><tbody>${
     dups.map(d => `<tr><td>${escapeHtml(empleadoLabel(d.empleadoId))}</td><td>${escapeHtml(d.categoria)}${d.subtipo?' — '+escapeHtml(d.subtipo):''}</td><td class="num">${d.count}</td><td class="num">${d.limite}</td><td>${d.folios.map(escapeHtml).join(', ')}</td></tr>`).join('')}</tbody>` : `<tbody><tr><td style="padding:10px;color:var(--ink-faint);">Sin duplicados.</td></tr></tbody>`;
+  lockIfReadOnly('sub-limites');
 }
 async function saveLimites(){
   for(const c of CATEGORIAS){ const v = document.getElementById(`limcat_${c}`).value; await api(`/api/limites/categoria/${c}`, {method:'PUT', body:{limite: v===''?9999:parseInt(v)}}); }
@@ -1098,6 +1125,7 @@ function renderAdminConfig(){
   el('cfgEmpresaNombre').value = config.empresaNombre || '';
   el('cfgCorreoAdminTI').value = config.correoAdminTI || '';
   el('cfgModoMigracion').checked = config.modoMigracion === 'true';
+  lockIfReadOnly('sub-config');
 }
 async function saveConfig(){
   await api('/api/config', {method:'PUT', body:{
@@ -1123,6 +1151,7 @@ function bindEvents(){
   el('modalClose').onclick = closeModal; el('btnCancel').onclick = closeModal; el('btnSave').onclick = saveItem;
   el('searchInput').oninput = renderTable;
   el('filterEstado').onchange = renderTable;
+  el('btnPlantillaCSV').onclick = descargarPlantillaCSV;
   el('btnImport').onclick = () => el('fileImport').click();
   el('fileImport').onchange = e => { if(e.target.files[0]) importCSV(e.target.files[0]); e.target.value=''; };
   el('btnImportFactura').onclick = () => el('fileImportFactura').click();
@@ -1148,6 +1177,13 @@ function bindEvents(){
   el('passGuardar').onclick = saveChangePass;
 }
 
+function applyRolUI(){
+  const escritura = puedeEscribir();
+  ['btnNew','btnImport','btnImportFactura','btnEmpNew'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
+  if(!escritura){
+    el('whoAmI').innerHTML = `Sesión: ${rol} <span class="badge resguardo" style="margin-left:6px;">Solo lectura</span>`;
+  }
+}
 async function boot(){
   buildFilterOptions();
   try{
@@ -1155,6 +1191,7 @@ async function boot(){
     el('loginView').classList.add('hidden');
     el('appRoot').classList.remove('hidden');
     el('whoAmI').textContent = `Sesión: ${rol}`;
+    applyRolUI();
     renderInventarioView();
   }catch(e){ showToast(e.message, true); logout(); }
 }
