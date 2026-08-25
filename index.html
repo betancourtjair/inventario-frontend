@@ -150,6 +150,7 @@
   .minitable th{text-align:left;padding:7px 10px;background:var(--surface-alt);font-size:10.5px;text-transform:uppercase;color:var(--ink-soft);}
   .minitable td{padding:7px 10px;border-bottom:1px solid var(--border);}
   .minitable td.num, .minitable th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
+  .minitable input, .minitable select{border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px;background:var(--surface-alt);}
 
   .limtable{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px;}
   .limtable th, .limtable td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;}
@@ -223,6 +224,8 @@
       <div class="spacer"></div>
       <button class="btn btn-ghost" id="btnImport">Importar CSV</button>
       <input type="file" id="fileImport" accept=".csv">
+      <button class="btn btn-ghost" id="btnImportFactura">Importar factura (XML)</button>
+      <input type="file" id="fileImportFactura" accept=".xml">
       <button class="btn btn-primary" id="btnNew">+ Nuevo equipo</button>
     </div>
     <div class="tablewrap">
@@ -235,6 +238,7 @@
     <div class="sectionlabel">Resumen fiscal <span style="text-transform:none;font-weight:400;">— referencia, línea recta</span></div>
     <div class="stats" id="statsFiscal"></div>
     <div class="finblock"><h3>Desglose por categoría</h3><table class="minitable" id="finTablaCategoria"></table></div>
+    <div class="finblock"><h3>Equipos por factura</h3><table class="minitable" id="finTablaFacturas"></table></div>
     <div class="finblock"><h3>Garantías y préstamos por vencer o vencidos</h3><table class="minitable" id="finTablaAlertas"></table></div>
     <div class="disclaimer">Cifras de referencia (línea recta, sin INPC). Valídalas con tu contador para efectos de ISR.</div>
   </div>
@@ -341,6 +345,26 @@
       <div class="field"><label>Confirmar contraseña nueva</label><input type="password" id="passConfirma"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" id="passCancel">Cancelar</button><button class="btn btn-primary" id="passGuardar">Guardar</button></div>
+  </div>
+</div>
+
+<!-- Modal importar factura -->
+<div class="overlay" id="overlayFactura">
+  <div class="modal wide">
+    <div class="modal-head"><h2>Importar factura (CFDI XML)</h2><button class="modal-close" id="facturaClose">&times;</button></div>
+    <div class="modal-body">
+      <div id="facturaHeaderInfo" class="fichacard" style="margin-bottom:16px;"></div>
+      <p style="color:var(--ink-soft);font-size:12.5px;">Revisa y ajusta cada renglón antes de crear los equipos. Se leyó la descripción de cada concepto para adivinar categoría y números de serie — verifícalos, sobre todo si el formato de la factura es distinto al usual.</p>
+      <div style="overflow-x:auto;">
+        <table class="minitable" id="facturaRowsTable"></table>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btnAddFacturaRow" style="margin-top:10px;">+ Agregar renglón</button>
+      <div class="disclaimer">Los equipos se crean sin empleado asignado y con estado "Activo". La tasa de depreciación sugerida es editable por renglón. Puedes seguir editando cada equipo normalmente después de crearlo.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="facturaCancelBtn">Cancelar</button>
+      <button class="btn btn-primary" id="btnCrearDesdeFactura">Crear equipos</button>
+    </div>
   </div>
 </div>
 
@@ -604,6 +628,20 @@ function renderTable(){
 function renderInventarioView(){ renderTabs(); renderStatsOp(); renderAlerts(); renderHead(); renderTable(); }
 
 /* ---------------- FINANZAS ---------------- */
+function renderFinTablaFacturas(){
+  const grupos = {};
+  equipos.forEach(i => {
+    if(!i.numeroFactura) return;
+    const key = i.numeroFactura;
+    grupos[key] = grupos[key] || { proveedor: i.proveedor, fecha: i.fechaFactura, folios: [], total: 0 };
+    grupos[key].folios.push(i.folio);
+    if(i.fiscal) grupos[key].total += i.fiscal.moi;
+  });
+  const filas = Object.entries(grupos);
+  el('finTablaFacturas').innerHTML = filas.length ? `<thead><tr><th>Factura / UUID</th><th>Proveedor</th><th class="num">Equipos</th><th class="num">Valor total</th><th>Folios</th></tr></thead><tbody>${
+    filas.map(([uuid, g]) => `<tr><td class="serie">${escapeHtml(uuid)}</td><td>${escapeHtml(g.proveedor)||'—'}</td><td class="num">${g.folios.length}</td><td class="num">${fmtMoney(g.total)}</td><td>${g.folios.map(escapeHtml).join(', ')}</td></tr>`).join('')
+  }</tbody>` : `<tbody><tr><td style="padding:10px;color:var(--ink-faint);">Ningún equipo tiene factura asociada todavía.</td></tr></tbody>`;
+}
 function renderFinanzasView(){
   let moiTotal=0, depTotal=0, pendTotal=0, alertas=0;
   equipos.forEach(i => { if(i.fiscal){ moiTotal+=i.fiscal.moi; depTotal+=i.fiscal.depAcumulada; pendTotal+=i.fiscal.pendiente; }
@@ -628,6 +666,7 @@ function renderFinanzasView(){
       const badge = i.prestamo ? prestamoLabel(i.prestamo) : garantiaLabel(i.garantia);
       return `<tr><td>${escapeHtml(i.folio)}</td><td>${i.prestamo?'Préstamo':'Garantía'}</td><td>${escapeHtml(empleadoLabel(i.empleadoId))||'—'}</td><td><span class="badge ${badge.cls}">${badge.txt}</span></td></tr>`;
     }).join('')}</tbody>` : `<tbody><tr><td style="padding:10px;color:var(--ink-faint);">Sin alertas.</td></tr></tbody>`;
+  renderFinTablaFacturas();
 }
 
 /* ---------------- MODAL EQUIPO ---------------- */
@@ -651,7 +690,7 @@ const FIELD_SECTIONS = [
   { title:'Préstamo', fields:[
     {key:'fechaDevolucionEsperada', label:'Fecha de devolución esperada', type:'date', showIf:'Prestado', showIfField:'estado'},
   ]},
-  { title:'Factura y fiscal', fields:[
+  { title:'Factura y fiscal (opcional — se puede llenar sola al importar una factura)', fields:[
     {key:'proveedor', label:'Proveedor', type:'text'}, {key:'rfcProveedor', label:'RFC proveedor', type:'text'},
     {key:'numeroFactura', label:'No. factura / UUID', type:'text'},
     {key:'fechaFactura', label:'Fecha de factura', type:'date'}, {key:'fechaInicioUso', label:'Inicio de uso', type:'date'},
@@ -845,6 +884,142 @@ async function importCSV(file){
   }catch(e){ showToast(e.message, true); }
 }
 
+/* ---------------- IMPORTAR FACTURA (CFDI XML) ---------------- */
+let facturaHeader = null;
+let facturaRows = [];
+
+function getXmlEls(doc, names){
+  for(const n of names){ const els = doc.getElementsByTagName(n); if(els.length) return Array.from(els); }
+  return [];
+}
+function guessCategoria(desc){
+  const d = (desc||'').toLowerCase();
+  if(/laptop|notebook|port[aá]til/.test(d)) return {categoria:'Laptop', subtipo:''};
+  if(/monitor|pantalla|display/.test(d)) return {categoria:'Monitor', subtipo:''};
+  if(/celular|tel[eé]fono|smartphone|iphone|galaxy/.test(d)) return {categoria:'Celular', subtipo:''};
+  const primeras = (desc||'').trim().split(/\s+/).slice(0,3).join(' ');
+  return {categoria:'Otro', subtipo: primeras || 'Equipo'};
+}
+function extraerSeries(desc, cantidad){
+  const m = (desc||'').match(/(?:N\/?S|S\/N|SERIE(?:S)?|IMEI)\s*[:\-]?\s*([A-Za-z0-9,\-\/\s]{4,})/i);
+  if(!m) return new Array(cantidad).fill('');
+  const tokens = m[1].split(/[,\/]+|\s{2,}/).map(t=>t.trim()).filter(t=>t.length>=4);
+  const out = [];
+  for(let i=0;i<cantidad;i++) out.push(tokens[i] || '');
+  return out;
+}
+function parseCFDI(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  if(doc.querySelector('parsererror')) throw new Error('El archivo no es un XML válido');
+  const comprobante = getXmlEls(doc, ['cfdi:Comprobante','Comprobante'])[0];
+  const emisor = getXmlEls(doc, ['cfdi:Emisor','Emisor'])[0];
+  const timbre = getXmlEls(doc, ['tfd:TimbreFiscalDigital','TimbreFiscalDigital'])[0];
+  const conceptosEls = getXmlEls(doc, ['cfdi:Concepto','Concepto']);
+  if(!comprobante || !conceptosEls.length) throw new Error('No se encontraron conceptos en el XML — ¿es un CFDI válido?');
+
+  const fechaRaw = comprobante.getAttribute('Fecha') || '';
+  const header = {
+    proveedor: emisor ? (emisor.getAttribute('Nombre')||'') : '',
+    rfcProveedor: emisor ? (emisor.getAttribute('Rfc')||'') : '',
+    numeroFactura: timbre ? (timbre.getAttribute('UUID')||'') : '',
+    fechaFactura: fechaRaw ? fechaRaw.slice(0,10) : '',
+  };
+  const conceptos = conceptosEls.map(c => ({
+    descripcion: c.getAttribute('Descripcion') || '',
+    cantidad: Math.max(1, Math.round(parseFloat(c.getAttribute('Cantidad')) || 1)),
+    valorUnitario: parseFloat(c.getAttribute('ValorUnitario')) || (parseFloat(c.getAttribute('Importe'))||0) / Math.max(1, Math.round(parseFloat(c.getAttribute('Cantidad'))||1)),
+  }));
+  return { header, conceptos };
+}
+function buildFacturaRows(header, conceptos){
+  const shortId = (header.numeroFactura || 'FACT').replace(/-/g,'').slice(-6).toUpperCase() || 'FACT';
+  const rows = [];
+  let n = 1;
+  conceptos.forEach(c => {
+    const { categoria, subtipo } = guessCategoria(c.descripcion);
+    const series = extraerSeries(c.descripcion, c.cantidad);
+    for(let i=0;i<c.cantidad;i++){
+      rows.push({
+        folio: `INV-${shortId}-${String(n).padStart(2,'0')}`,
+        categoria, subtipo, descripcion: c.descripcion,
+        serie: series[i] || '',
+        montoUnitario: c.valorUnitario ? c.valorUnitario.toFixed(2) : '',
+        tasaDepreciacion: TASA_SUGERIDA[categoria] ?? 10,
+      });
+      n++;
+    }
+  });
+  return rows;
+}
+async function handleFacturaFile(file){
+  try{
+    const text = await file.text();
+    const { header, conceptos } = parseCFDI(text);
+    facturaHeader = header;
+    facturaRows = buildFacturaRows(header, conceptos);
+    renderFacturaHeaderInfo();
+    renderFacturaRowsTable();
+    el('overlayFactura').classList.add('show');
+  }catch(e){ showToast('No se pudo leer la factura: '+e.message, true); }
+}
+function renderFacturaHeaderInfo(){
+  const h = facturaHeader;
+  el('facturaHeaderInfo').innerHTML = `<div class="fichagrid">
+    <div class="row"><div class="k">Proveedor</div><div class="v" style="text-align:left">${escapeHtml(h.proveedor)||'—'}</div></div>
+    <div class="row"><div class="k">RFC</div><div class="v" style="text-align:left">${escapeHtml(h.rfcProveedor)||'—'}</div></div>
+    <div class="row"><div class="k">Folio fiscal (UUID)</div><div class="v" style="text-align:left">${escapeHtml(h.numeroFactura)||'—'}</div></div>
+    <div class="row"><div class="k">Fecha de factura</div><div class="v" style="text-align:left">${escapeHtml(h.fechaFactura)||'—'}</div></div>
+  </div>`;
+}
+function renderFacturaRowsTable(){
+  const catOpts = CATEGORIAS.map(c => `<option value="${c}">${c}</option>`).join('');
+  el('facturaRowsTable').innerHTML = `<thead><tr>
+    <th>Folio</th><th>Categoría</th><th>Subtipo</th><th>Serie</th><th class="num">Monto unit.</th><th class="num">Tasa %</th><th></th>
+  </tr></thead><tbody>${facturaRows.map((r,idx) => `
+    <tr>
+      <td><input type="text" data-fidx="${idx}" data-ffield="folio" value="${escapeHtml(r.folio)}" style="width:140px;"></td>
+      <td><select data-fidx="${idx}" data-ffield="categoria" style="width:100px;">${CATEGORIAS.map(c=>`<option value="${c}" ${r.categoria===c?'selected':''}>${c}</option>`).join('')}</select></td>
+      <td><input type="text" data-fidx="${idx}" data-ffield="subtipo" value="${escapeHtml(r.subtipo)}" style="width:110px;" title="${escapeHtml(r.descripcion)}"></td>
+      <td><input type="text" data-fidx="${idx}" data-ffield="serie" value="${escapeHtml(r.serie)}" style="width:130px;" placeholder="Sin serie detectada"></td>
+      <td><input type="number" step="0.01" data-fidx="${idx}" data-ffield="montoUnitario" value="${escapeHtml(r.montoUnitario)}" style="width:100px;"></td>
+      <td><input type="number" data-fidx="${idx}" data-ffield="tasaDepreciacion" value="${escapeHtml(r.tasaDepreciacion)}" style="width:70px;"></td>
+      <td><button class="btn btn-danger btn-sm" data-frmrow="${idx}">Quitar</button></td>
+    </tr>`).join('')}</tbody>`;
+  document.querySelectorAll('[data-fidx]').forEach(inp => inp.addEventListener('change', e => {
+    const idx = parseInt(e.target.dataset.fidx), field = e.target.dataset.ffield;
+    facturaRows[idx][field] = e.target.value;
+  }));
+  document.querySelectorAll('[data-frmrow]').forEach(b => b.onclick = () => {
+    facturaRows.splice(parseInt(b.dataset.frmrow), 1);
+    renderFacturaRowsTable();
+  });
+}
+function addFacturaRow(){
+  facturaRows.push({ folio:`INV-NUEVO-${facturaRows.length+1}`, categoria:'Otro', subtipo:'', descripcion:'', serie:'', montoUnitario:'', tasaDepreciacion:10 });
+  renderFacturaRowsTable();
+}
+function closeFacturaModal(){ el('overlayFactura').classList.remove('show'); }
+async function crearDesdeFactura(){
+  if(!facturaRows.length){ showToast('No hay renglones para crear', true); return; }
+  let creados = 0, fallidos = [];
+  for(const r of facturaRows){
+    const data = {
+      folio: r.folio, categoria: r.categoria, subtipo: r.categoria==='Otro' ? r.subtipo : '',
+      serie: r.serie, estado: 'Activo',
+      proveedor: facturaHeader.proveedor, rfcProveedor: facturaHeader.rfcProveedor,
+      numeroFactura: facturaHeader.numeroFactura, fechaFactura: facturaHeader.fechaFactura,
+      fechaInicioUso: facturaHeader.fechaFactura,
+      montoFactura: r.montoUnitario, tasaDepreciacion: r.tasaDepreciacion,
+      notas: r.descripcion ? `Importado de factura. Descripción original: ${r.descripcion}` : '',
+    };
+    try{ await api('/api/equipos', {method:'POST', body:data}); creados++; }
+    catch(e){ fallidos.push(`${r.folio}: ${e.message}`); }
+  }
+  await loadAll(); closeFacturaModal(); renderInventarioView();
+  showToast(`Creados ${creados} equipo(s)${fallidos.length ? `, ${fallidos.length} con error` : ''}`, fallidos.length>0);
+  if(fallidos.length) console.warn('Errores al crear desde factura:', fallidos);
+}
+
 /* ---------------- ADMIN EMPLEADOS ---------------- */
 function renderAdminEmpleados(){
   const q = (el('empSearchInput').value||'').trim().toLowerCase();
@@ -950,6 +1125,13 @@ function bindEvents(){
   el('filterEstado').onchange = renderTable;
   el('btnImport').onclick = () => el('fileImport').click();
   el('fileImport').onchange = e => { if(e.target.files[0]) importCSV(e.target.files[0]); e.target.value=''; };
+  el('btnImportFactura').onclick = () => el('fileImportFactura').click();
+  el('fileImportFactura').onchange = e => { if(e.target.files[0]) handleFacturaFile(e.target.files[0]); e.target.value=''; };
+  el('facturaClose').onclick = closeFacturaModal;
+  el('facturaCancelBtn').onclick = closeFacturaModal;
+  el('overlayFactura').onclick = e => { if(e.target===el('overlayFactura')) closeFacturaModal(); };
+  el('btnAddFacturaRow').onclick = addFacturaRow;
+  el('btnCrearDesdeFactura').onclick = crearDesdeFactura;
   el('btnEmpNew').onclick = () => openEmpModal(null);
   el('empSearchInput').oninput = renderAdminEmpleados;
   el('btnAddLimSubtipo').onclick = addLimiteSubtipo;
