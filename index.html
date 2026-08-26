@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Control de Inventario, Finanzas y Admin · Equipos de Cómputo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,6 +95,13 @@
   .spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:girar .7s linear infinite;vertical-align:-2px;margin-right:6px;}
   .btn-ghost .spinner, .btn-danger .spinner{border-color:rgba(17,27,34,.2);border-top-color:var(--ink);}
   @keyframes girar{to{transform:rotate(360deg);}}
+  .combobox{position:relative;}
+  .combobox-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);max-height:220px;overflow-y:auto;z-index:40;}
+  .combobox-menu.hidden{display:none;}
+  .combobox-item{padding:8px 10px;cursor:pointer;font-size:13px;}
+  .combobox-item:hover{background:var(--surface-alt);}
+  .combobox-item.crear{color:var(--accent);font-weight:600;border-top:1px solid var(--border);}
+  .combobox-empty{padding:8px 10px;color:var(--ink-faint);font-size:12.5px;}
 
   .tablewrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
   table{width:100%;border-collapse:collapse;font-size:12.8px;}
@@ -810,8 +820,12 @@ function buildForm(item){
       if(f.type==='select'){
         control = `<select id="f_${f.key}" ${f.required?'required':''}><option value="">Selecciona...</option>${f.options.map(o=>`<option value="${o}" ${item ? ((item[f.key]||'').toString().trim().toLowerCase()===o.toLowerCase()?'selected':'') : (f.default===o?'selected':'')}>${o}</option>`).join('')}</select>`;
       } else if(f.type==='employee'){
-        const sorted = [...employees].sort((a,b)=>a.nombre.localeCompare(b.nombre));
-        control = `<select id="f_${f.key}"><option value="">Sin asignar</option>${sorted.map(e=>`<option value="${e.id}" ${item&&item[f.key]===e.id?'selected':''}>${escapeHtml(e.nombre)}${e.departamento?' — '+escapeHtml(e.departamento):''}</option>`).join('')}</select>`;
+        const nombreInicial = item && item[f.key] ? (employees.find(e=>e.id===item[f.key])?.nombre || '') : '';
+        control = `<div class="combobox">
+          <input type="text" id="f_${f.key}_buscar" placeholder="Escribe un nombre..." autocomplete="off" value="${escapeHtml(nombreInicial)}">
+          <input type="hidden" id="f_${f.key}" value="${item&&item[f.key]?escapeHtml(item[f.key]):''}">
+          <div class="combobox-menu hidden" id="f_${f.key}_menu"></div>
+        </div>`;
       } else if(f.type==='checkbox'){
         html += `<div class="field checkline full" id="wrap_${f.key}"><input type="checkbox" id="f_${f.key}" checked><label style="margin:0;">${f.label}</label></div>`;
         return;
@@ -871,6 +885,45 @@ function buildForm(item){
   if(compSelForListener) compSelForListener.addEventListener('change', updateDependents);
   tasaInput.addEventListener('input', () => tasaInput.dataset.userTouched='1');
   updateDependents();
+  setupEmpleadoCombobox('empleadoId', item);
+}
+let empCreationCallback = null;
+function setupEmpleadoCombobox(key, item){
+  const buscar = document.getElementById(`f_${key}_buscar`);
+  const hidden = document.getElementById(`f_${key}`);
+  const menu = document.getElementById(`f_${key}_menu`);
+  if(!buscar) return;
+
+  function renderMenu(query){
+    const q = query.trim().toLowerCase();
+    let lista = [...employees].filter(e => e.estado !== 'Baja').sort((a,b)=>a.nombre.localeCompare(b.nombre));
+    if(q) lista = lista.filter(e => `${e.nombre} ${e.correo} ${e.departamento||''}`.toLowerCase().includes(q));
+    lista = lista.slice(0, 8);
+    let html = lista.map(e => `<div class="combobox-item" data-id="${escapeHtml(e.id)}">${escapeHtml(e.nombre)}${e.departamento?' — '+escapeHtml(e.departamento):''}</div>`).join('');
+    if(!lista.length) html += `<div class="combobox-empty">Sin resultados</div>`;
+    const textoEscrito = query.trim();
+    html += `<div class="combobox-item crear" data-crear="1">+ Crear empleado${textoEscrito?` "${escapeHtml(textoEscrito)}"`:''}</div>`;
+    menu.innerHTML = html;
+    menu.classList.remove('hidden');
+    menu.querySelectorAll('.combobox-item[data-id]').forEach(nodo => nodo.onclick = () => {
+      const emp = employees.find(x=>x.id===nodo.dataset.id);
+      hidden.value = emp.id;
+      buscar.value = emp.nombre;
+      menu.classList.add('hidden');
+    });
+    const crearBtn = menu.querySelector('[data-crear]');
+    if(crearBtn) crearBtn.onclick = () => {
+      menu.classList.add('hidden');
+      empCreationCallback = (nuevoEmp) => { hidden.value = nuevoEmp.id; buscar.value = nuevoEmp.nombre; };
+      openEmpModal(null);
+      if(textoEscrito){ const efNombre = document.getElementById('ef_nombre'); if(efNombre) efNombre.value = textoEscrito; }
+    };
+  }
+
+  if(!item){ hidden.value=''; buscar.value=''; }
+  buscar.addEventListener('focus', () => renderMenu(buscar.value));
+  buscar.addEventListener('input', () => { hidden.value=''; renderMenu(buscar.value); });
+  document.addEventListener('click', e => { if(!e.target.closest('.combobox')) menu.classList.add('hidden'); });
 }
 function compressImageFile(file){
   return new Promise((resolve, reject) => {
@@ -1286,7 +1339,14 @@ async function saveEmpleado(){
     if(editingEmpId) await api(`/api/empleados/${encodeURIComponent(editingEmpId)}`, {method:'PUT', body:data});
     else await api('/api/empleados', {method:'POST', body:data});
     await loadAll(); el('overlayEmp').classList.remove('show'); renderAdminEmpleados(); renderInventarioView();
-    showToast('Guardado');
+    if(empCreationCallback){
+      const nuevoEmp = employees.find(e=>e.id===data.id);
+      if(nuevoEmp) empCreationCallback(nuevoEmp);
+      empCreationCallback = null;
+      showToast('Empleado creado y seleccionado');
+    } else {
+      showToast('Guardado');
+    }
   }catch(e){ showToast(e.message, true); }
   finally{ quitarBotonCargando(btn); }
 }
