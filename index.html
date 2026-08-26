@@ -1301,7 +1301,7 @@ function openEmpleadoDetalle(id){
     </tbody></table>` : `<p style="color:var(--ink-faint);">Este empleado no tiene equipos asignados.</p>`}`;
   el('overlayEmpleadoDetalle').classList.add('show');
 }
-const DEPARTAMENTOS = ['DIRECCION','FINANZAS Y ADMON.','CRECIMIENTO HUMANO','OPERACIONES','MARKETING','CONSTRUCCION','EXPANSION'];
+const DEPARTAMENTOS = ['DIRECCION','FINANZAS Y ADMON.','CRECIMIENTO HUMANO','OPERACIONES','MARKETING','CONSTRUCCION','EXPANSION','TI'];
 const EMP_FIELDS = [
   {key:'id', label:'ID', required:true}, {key:'nombre', label:'Nombre', required:true},
   {key:'correo', label:'Correo', required:true}, {key:'departamento', label:'Departamento', type:'select', options:DEPARTAMENTOS}, {key:'puesto', label:'Puesto'},
