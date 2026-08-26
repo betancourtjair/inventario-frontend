@@ -279,9 +279,9 @@
       <div class="toolbar">
         <input type="text" id="empSearchInput" placeholder="Buscar empleado...">
         <div class="spacer"></div>
-        <button class="btn btn-ghost" id="btnPlantillaEmpXML">Descargar plantilla XML</button>
-        <button class="btn btn-ghost" id="btnEmpImportXML">Importar XML</button>
-        <input type="file" id="fileEmpImportXML" accept=".xml">
+        <button class="btn btn-ghost" id="btnPlantillaEmpCSV">Descargar plantilla CSV</button>
+        <button class="btn btn-ghost" id="btnEmpImportCSV">Importar CSV</button>
+        <input type="file" id="fileEmpImportCSV" accept=".csv">
         <button class="btn btn-primary" id="btnEmpNew">+ Nuevo empleado</button>
       </div>
       <div class="tablewrap"><div style="overflow-x:auto;">
@@ -372,6 +372,15 @@
       <div class="field"><label>Confirmar contraseña nueva</label><input type="password" id="passConfirma"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" id="passCancel">Cancelar</button><button class="btn btn-primary" id="passGuardar">Guardar</button></div>
+  </div>
+</div>
+
+<!-- Modal detalle de equipos por empleado -->
+<div class="overlay" id="overlayEmpleadoDetalle">
+  <div class="modal wide">
+    <div class="modal-head"><h2 id="empleadoDetalleTitle">Equipos asignados</h2><button class="modal-close" id="empleadoDetalleClose">&times;</button></div>
+    <div class="modal-body" id="empleadoDetalleBody"></div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="empleadoDetalleCloseBtn">Cerrar</button></div>
   </div>
 </div>
 
@@ -1149,11 +1158,30 @@ function renderAdminEmpleados(){
     <td class="folio">${escapeHtml(e.id)}</td><td>${escapeHtml(e.nombre)}${dupIds.has(e.id)?' <span class="badge dup">dup</span>':''}</td>
     <td>${escapeHtml(e.departamento)||'—'}</td><td class="serie">${escapeHtml(e.correo)}</td>
     <td><span class="badge ${e.estado==='Baja'?'baja':'activo'}">${escapeHtml(e.estado)}</span></td>
-    <td>${e._count ? e._count.equipos : 0}</td>
+    <td><button class="btn btn-ghost btn-sm" data-verempleado="${escapeHtml(e.id)}">${e._count ? e._count.equipos : 0} — Ver equipos</button></td>
     <td><div class="rowactions">${puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-empedit="${escapeHtml(e.id)}">Editar</button><button class="btn btn-danger btn-sm" data-empdel="${escapeHtml(e.id)}">Eliminar</button>` : '<span class="hint">Solo lectura</span>'}</div></td>
   </tr>`).join('') : `<tr><td colspan="7"><div class="empty"><strong>Sin empleados</strong></div></td></tr>`;
   document.querySelectorAll('[data-empedit]').forEach(b => b.onclick = () => openEmpModal(b.dataset.empedit));
   document.querySelectorAll('[data-empdel]').forEach(b => b.onclick = () => deleteEmpleado(b.dataset.empdel));
+  document.querySelectorAll('[data-verempleado]').forEach(b => b.onclick = () => openEmpleadoDetalle(b.dataset.verempleado));
+}
+function openEmpleadoDetalle(id){
+  const emp = employees.find(e => e.id === id);
+  if(!emp) return;
+  const eqs = equipos.filter(i => i.empleadoId === id);
+  el('empleadoDetalleTitle').textContent = `Equipos asignados — ${emp.nombre}`;
+  let pendienteTotal = 0;
+  eqs.forEach(i => { if(i.fiscal) pendienteTotal += i.fiscal.pendiente; });
+  el('empleadoDetalleBody').innerHTML = `<div class="fichagrid" style="margin-bottom:14px;">
+      <div class="row"><div class="k">Departamento</div><div class="v" style="text-align:left">${escapeHtml(emp.departamento)||'—'}</div></div>
+      <div class="row"><div class="k">Puesto</div><div class="v" style="text-align:left">${escapeHtml(emp.puesto)||'—'}</div></div>
+      <div class="row"><div class="k">Correo</div><div class="v" style="text-align:left">${escapeHtml(emp.correo)}</div></div>
+      <div class="row"><div class="k">Valor pendiente total</div><div class="v" style="text-align:left">${fmtMoney(pendienteTotal)}</div></div>
+    </div>
+    ${eqs.length ? `<table class="minitable"><thead><tr><th>Folio</th><th>Categoría</th><th>Marca / Modelo</th><th>Serie</th><th>Estado</th><th>Garantía</th><th>Préstamo</th><th class="num">Val. pendiente</th></tr></thead><tbody>
+      ${eqs.map(i => { const gl = garantiaLabel(i.garantia); const pl = prestamoLabel(i.prestamo); return `<tr><td class="serie">${escapeHtml(i.folio)}</td><td><span class="badge ${catClass(i.categoria)}">${escapeHtml(i.categoria)}</span>${i.categoria==='Celular'&&i.componenteCelular&&i.componenteCelular!=='Equipo y SIM'?` <span class="hint">${escapeHtml(i.componenteCelular)}</span>`:''}</td><td>${escapeHtml(i.marca)||''} ${escapeHtml(i.modelo)||''}</td><td class="serie">${escapeHtml(i.serie)||'—'}</td><td><span class="badge ${estadoClass(i.estado)}">${escapeHtml(i.estado)}</span></td><td><span class="badge ${gl.cls}">${gl.txt}</span></td><td>${pl?`<span class="badge ${pl.cls}">${pl.txt}</span>`:'—'}</td><td class="num">${i.fiscal ? fmtMoney(i.fiscal.pendiente) : '—'}</td></tr>`; }).join('')}
+    </tbody></table>` : `<p style="color:var(--ink-faint);">Este empleado no tiene equipos asignados.</p>`}`;
+  el('overlayEmpleadoDetalle').classList.add('show');
 }
 const EMP_FIELDS = [
   {key:'id', label:'ID', required:true}, {key:'nombre', label:'Nombre', required:true},
@@ -1167,44 +1195,34 @@ function openEmpModal(id){
     + `<div class="field"><label>Estado</label><select id="ef_estado"><option value="Activo" ${emp&&emp.estado==='Activo'?'selected':''}>Activo</option><option value="Baja" ${emp&&emp.estado==='Baja'?'selected':''}>Baja</option></select></div>`;
   el('overlayEmp').classList.add('show');
 }
-function descargarPlantillaEmpXML(){
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<!-- Plantilla de carga masiva de empleados. -->
-<!-- id: identificador único (ej. EMP-0001) — obligatorio -->
-<!-- nombre y correo — obligatorios -->
-<!-- departamento, puesto — opcionales -->
-<!-- estado: "Activo" o "Baja" — si se omite, se usa "Activo" -->
-<!-- Borra el <Empleado> de ejemplo antes de importar. -->
-<Empleados>
-  <Empleado id="EMP-0001" nombre="Nombre Completo de Ejemplo" correo="correo@fpt.com.mx" departamento="Recursos Humanos" puesto="Analista" estado="Activo"/>
-</Empleados>`;
-  const blob = new Blob([xml], {type:'application/xml;charset=utf-8;'});
+function descargarPlantillaEmpCSV(){
+  const notaId = `# id: identificador único (ej. EMP-0001) — obligatorio`;
+  const notaCampos = `# nombre y correo — obligatorios. departamento y puesto — opcionales.`;
+  const notaEstado = `# estado: "Activo" o "Baja" — si se omite, se usa "Activo"`;
+  const headers = ['id','nombre','correo','departamento','puesto','estado'];
+  const ejemplo = ['EMP-0001','Nombre Completo de Ejemplo','correo@fpt.com.mx','Recursos Humanos','Analista','Activo'];
+  const csv = [notaId, notaCampos, notaEstado, headers.join(','), ejemplo.map(v=>/[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='plantilla_empleados.xml'; a.click();
+  const a = document.createElement('a'); a.href=url; a.download='plantilla_empleados.csv'; a.click();
   URL.revokeObjectURL(url);
-  showToast('Plantilla descargada — borra el renglón de ejemplo antes de importar');
+  showToast('Plantilla descargada — borra las líneas que empiezan con # y el renglón de ejemplo antes de importar');
 }
-function parseEmpleadosXML(xmlText){
-  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
-  if(doc.querySelector('parsererror')) throw new Error('El archivo no es un XML válido');
-  const nodos = Array.from(doc.getElementsByTagName('Empleado'));
-  if(!nodos.length) throw new Error('No se encontró ningún <Empleado> en el archivo');
-  return nodos.map(n => ({
-    id: n.getAttribute('id') || '',
-    nombre: n.getAttribute('nombre') || '',
-    correo: n.getAttribute('correo') || '',
-    departamento: n.getAttribute('departamento') || '',
-    puesto: n.getAttribute('puesto') || '',
-    estado: n.getAttribute('estado') || 'Activo',
-  }));
-}
-async function handleEmpImportXML(file){
-  let filas;
-  try{ filas = parseEmpleadosXML(await file.text()); }
-  catch(e){ showToast('No se pudo leer el archivo: '+e.message, true); return; }
+async function handleEmpImportCSV(file){
+  const text = await file.text();
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length && !l.trim().startsWith('#'));
+  if(lines.length<2){ showToast('Archivo vacío', true); return; }
+  const headers = parseCSVLine(lines[0]).map(h=>h.trim());
+  const filas = [];
+  for(let i=1;i<lines.length;i++){
+    const vals = parseCSVLine(lines[i]); const row = {};
+    headers.forEach((h,idx)=> row[h]=(vals[idx]??'').trim());
+    filas.push(row);
+  }
   let creados = 0, omitidos = 0, fallidos = [];
   for(const f of filas){
     if(!f.id || !f.nombre || !f.correo){ omitidos++; continue; }
+    if(!f.estado) f.estado = 'Activo';
     try{ await api('/api/empleados', {method:'POST', body:f}); creados++; }
     catch(e){ omitidos++; fallidos.push(`${f.id}: ${e.message}`); }
   }
@@ -1312,12 +1330,15 @@ function bindEvents(){
   el('facturaDetalleClose').onclick = () => el('overlayFacturaDetalle').classList.remove('show');
   el('facturaDetalleCloseBtn').onclick = () => el('overlayFacturaDetalle').classList.remove('show');
   el('overlayFacturaDetalle').onclick = e => { if(e.target===el('overlayFacturaDetalle')) el('overlayFacturaDetalle').classList.remove('show'); };
+  el('empleadoDetalleClose').onclick = () => el('overlayEmpleadoDetalle').classList.remove('show');
+  el('empleadoDetalleCloseBtn').onclick = () => el('overlayEmpleadoDetalle').classList.remove('show');
+  el('overlayEmpleadoDetalle').onclick = e => { if(e.target===el('overlayEmpleadoDetalle')) el('overlayEmpleadoDetalle').classList.remove('show'); };
   el('btnAddFacturaRow').onclick = addFacturaRow;
   el('btnCrearDesdeFactura').onclick = crearDesdeFactura;
   el('btnEmpNew').onclick = () => openEmpModal(null);
-  el('btnPlantillaEmpXML').onclick = descargarPlantillaEmpXML;
-  el('btnEmpImportXML').onclick = () => el('fileEmpImportXML').click();
-  el('fileEmpImportXML').onchange = e => { if(e.target.files[0]) handleEmpImportXML(e.target.files[0]); e.target.value=''; };
+  el('btnPlantillaEmpCSV').onclick = descargarPlantillaEmpCSV;
+  el('btnEmpImportCSV').onclick = () => el('fileEmpImportCSV').click();
+  el('fileEmpImportCSV').onchange = e => { if(e.target.files[0]) handleEmpImportCSV(e.target.files[0]); e.target.value=''; };
   el('empSearchInput').oninput = renderAdminEmpleados;
   el('btnAddLimSubtipo').onclick = addLimiteSubtipo;
   el('btnSaveLimites').onclick = saveLimites;
@@ -1335,7 +1356,7 @@ function bindEvents(){
 
 function applyRolUI(){
   const escritura = puedeEscribir();
-  ['btnNew','btnImport','btnImportFactura','btnImportCel','btnImportFacturaCel','btnEmpNew','btnEmpImportXML'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
+  ['btnNew','btnImport','btnImportFactura','btnImportCel','btnImportFacturaCel','btnEmpNew','btnEmpImportCSV'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
   if(!escritura){
     el('whoAmI').innerHTML = `Sesión: ${rol} <span class="badge resguardo" style="margin-left:6px;">Solo lectura</span>`;
   }
