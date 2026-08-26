@@ -646,10 +646,14 @@ function renderTabs(){
   el('tabs').innerHTML = ['Todas', ...CATEGORIAS].map(t => `<div class="tab ${categoryTab===t?'active':''}" data-tab="${t}">${labelMap[t]}<span class="cnt">${counts[t]}</span></div>`).join('');
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => { categoryTab=t.dataset.tab; renderInventarioView(); });
 }
+function equiposDeLaPestanaActual(){
+  return categoryTab==='Todas' ? equipos : equipos.filter(e => e.categoria===categoryTab);
+}
 function renderStatsOp(){
-  const total = equipos.length;
+  const lista = equiposDeLaPestanaActual();
+  const total = lista.length;
   const counts = {Activo:0,'En reparación':0,Prestado:0,Baja:0};
-  equipos.forEach(i => { if(counts[i.estado]!==undefined) counts[i.estado]++; });
+  lista.forEach(i => { if(counts[i.estado]!==undefined) counts[i.estado]++; });
   const items = [
     {key:null, cls:'total', n:total, l:'Total'}, {key:'Activo', cls:'activo', n:counts['Activo'], l:'Activos'},
     {key:'En reparación', cls:'reparacion', n:counts['En reparación'], l:'En reparación'},
@@ -658,9 +662,10 @@ function renderStatsOp(){
   el('statsOp').innerHTML = items.map(i => `<div class="stat ${i.cls}"><div class="n">${i.n}</div><div class="l">${i.l}</div></div>`).join('');
 }
 function renderAlerts(){
-  const garantias = equipos.map(i => ({i, g:i.garantia})).filter(x => x.g && (x.g.status==='porvencer'||x.g.status==='vencida'));
-  const prestamos = equipos.map(i => ({i, p:i.prestamo})).filter(x => x.p && x.p.status==='vencido');
-  const dups = computeDuplicados();
+  const lista = equiposDeLaPestanaActual();
+  const garantias = lista.map(i => ({i, g:i.garantia})).filter(x => x.g && (x.g.status==='porvencer'||x.g.status==='vencida'));
+  const prestamos = lista.map(i => ({i, p:i.prestamo})).filter(x => x.p && x.p.status==='vencido');
+  const dups = computeDuplicados().filter(d => categoryTab==='Todas' || d.categoria===categoryTab);
   let html = '';
   if(garantias.length) html += `<div class="alertbanner"><strong>⚠ Garantías (${garantias.length})</strong><ul>${garantias.slice(0,5).map(x=>`<li><strong>${escapeHtml(x.i.folio)}</strong>: ${garantiaLabel(x.g).txt}</li>`).join('')}</ul></div>`;
   if(prestamos.length) html += `<div class="alertbanner danger"><strong>🕓 Préstamos vencidos (${prestamos.length})</strong><ul>${prestamos.slice(0,5).map(x=>`<li><strong>${escapeHtml(x.i.folio)}</strong> — ${escapeHtml(empleadoLabel(x.i.empleadoId))}</li>`).join('')}</ul></div>`;
@@ -1296,25 +1301,37 @@ function openEmpleadoDetalle(id){
     </tbody></table>` : `<p style="color:var(--ink-faint);">Este empleado no tiene equipos asignados.</p>`}`;
   el('overlayEmpleadoDetalle').classList.add('show');
 }
+const DEPARTAMENTOS = ['DIRECCION','FINANZAS Y ADMON.','CRECIMIENTO HUMANO','OPERACIONES','MARKETING','CONSTRUCCION','EXPANSION'];
 const EMP_FIELDS = [
   {key:'id', label:'ID', required:true}, {key:'nombre', label:'Nombre', required:true},
-  {key:'correo', label:'Correo', required:true}, {key:'departamento', label:'Departamento'}, {key:'puesto', label:'Puesto'},
+  {key:'correo', label:'Correo', required:true}, {key:'departamento', label:'Departamento', type:'select', options:DEPARTAMENTOS}, {key:'puesto', label:'Puesto'},
 ];
 function openEmpModal(id){
   editingEmpId = id || null;
   const emp = id ? employees.find(e=>e.id===id) : null;
   el('empModalTitle').textContent = emp ? `Editar — ${emp.nombre}` : 'Nuevo empleado';
-  el('empForm').innerHTML = EMP_FIELDS.map(f => `<div class="field"><label>${f.label}${f.required?' <span class="req">*</span>':''}</label><input type="text" id="ef_${f.key}" value="${emp?escapeHtml(emp[f.key]??''):''}" ${emp&&f.key==='id'?'readonly':''}></div>`).join('')
+  el('empForm').innerHTML = EMP_FIELDS.map(f => {
+    const val = emp ? escapeHtml(emp[f.key] ?? '') : '';
+    let control;
+    if(f.type === 'select'){
+      const actual = emp ? (emp[f.key]||'').toString().trim().toUpperCase() : '';
+      control = `<select id="ef_${f.key}"><option value="">Selecciona...</option>${f.options.map(o=>`<option value="${o}" ${actual===o?'selected':''}>${o}</option>`).join('')}</select>`;
+    } else {
+      control = `<input type="text" id="ef_${f.key}" value="${val}" ${emp&&f.key==='id'?'readonly':''}>`;
+    }
+    return `<div class="field"><label>${f.label}${f.required?' <span class="req">*</span>':''}</label>${control}</div>`;
+  }).join('')
     + `<div class="field"><label>Estado</label><select id="ef_estado"><option value="Activo" ${emp&&emp.estado==='Activo'?'selected':''}>Activo</option><option value="Baja" ${emp&&emp.estado==='Baja'?'selected':''}>Baja</option></select></div>`;
   el('overlayEmp').classList.add('show');
 }
 function descargarPlantillaEmpCSV(){
   const notaId = `# id: identificador único (ej. EMP-0001) — obligatorio`;
   const notaCampos = `# nombre y correo — obligatorios. departamento y puesto — opcionales.`;
+  const notaDepto = `# departamento debe ser uno de: ${DEPARTAMENTOS.join(', ')}`;
   const notaEstado = `# estado: "Activo" o "Baja" — si se omite, se usa "Activo"`;
   const headers = ['id','nombre','correo','departamento','puesto','estado'];
-  const ejemplo = ['EMP-0001','Nombre Completo de Ejemplo','correo@fpt.com.mx','Recursos Humanos','Analista','Activo'];
-  const csv = [notaId, notaCampos, notaEstado, headers.join(','), ejemplo.map(v=>/[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')].join('\n');
+  const ejemplo = ['EMP-0001','Nombre Completo de Ejemplo','correo@fpt.com.mx','CRECIMIENTO HUMANO','Analista','Activo'];
+  const csv = [notaId, notaCampos, notaDepto, notaEstado, headers.join(','), ejemplo.map(v=>/[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')].join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='plantilla_empleados.csv'; a.click();
