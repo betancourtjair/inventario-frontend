@@ -517,12 +517,12 @@ async function renderAdminUsuarios(){
   document.querySelectorAll('[data-resetpass]').forEach(b => b.onclick = async () => {
     const nueva = prompt(`Nueva contraseña para ${b.dataset.correo}:`);
     if(!nueva) return;
-    try{ await api(`/api/auth/usuarios/${b.dataset.resetpass}/password`, {method:'PUT', body:{password: nueva}}); showToast('Contraseña reseteada'); }
+    try{ await api(`/api/auth/usuarios/${encodeURIComponent(b.dataset.resetpass)}/password`, {method:'PUT', body:{password: nueva}}); showToast('Contraseña reseteada'); }
     catch(e){ showToast(e.message, true); }
   });
   document.querySelectorAll('[data-deluser]').forEach(b => b.onclick = async () => {
     if(!confirm('¿Eliminar este usuario del sistema?')) return;
-    try{ await api(`/api/auth/usuarios/${b.dataset.deluser}`, {method:'DELETE'}); renderAdminUsuarios(); showToast('Eliminado'); }
+    try{ await api(`/api/auth/usuarios/${encodeURIComponent(b.dataset.deluser)}`, {method:'DELETE'}); renderAdminUsuarios(); showToast('Eliminado'); }
     catch(e){ showToast(e.message, true); }
   });
 }
@@ -871,12 +871,12 @@ async function saveItem(){
   const prevEmpleadoId = editingFolio ? (equipos.find(i=>i.folio===editingFolio)||{}).empleadoId : null;
 
   try{
-    if(editingFolio){ await api(`/api/equipos/${editingFolio}`, {method:'PUT', body:data}); }
+    if(editingFolio){ await api(`/api/equipos/${encodeURIComponent(editingFolio)}`, {method:'PUT', body:data}); }
     else { await api('/api/equipos', {method:'POST', body:data}); }
 
     let cartaResp = null;
     if(nuevoEmpleadoId !== prevEmpleadoId || currentPhotos.length){
-      cartaResp = await api(`/api/equipos/${data.folio}/asignar`, {method:'POST', body:{empleadoId: nuevoEmpleadoId, enviarCorreo, fotos: currentPhotos}});
+      cartaResp = await api(`/api/equipos/${encodeURIComponent(data.folio)}/asignar`, {method:'POST', body:{empleadoId: nuevoEmpleadoId, enviarCorreo, fotos: currentPhotos}});
     }
     await loadAll();
     closeModal(); renderInventarioView();
@@ -886,11 +886,11 @@ async function saveItem(){
 }
 async function deleteItem(folio){
   if(!confirm(`¿Eliminar el equipo "${folio}"?`)) return;
-  try{ await api(`/api/equipos/${folio}`, {method:'DELETE'}); await loadAll(); renderInventarioView(); showToast('Eliminado'); }
+  try{ await api(`/api/equipos/${encodeURIComponent(folio)}`, {method:'DELETE'}); await loadAll(); renderInventarioView(); showToast('Eliminado'); }
   catch(e){
     const esBloqueoAuditoria = /historial de responsivas/i.test(e.message);
     if(esBloqueoAuditoria && rol==='super_admin' && confirm(`${e.message}\n\n¿Quieres forzar el borrado de todas formas? Esto también eliminará el historial de responsivas de este equipo — no se puede deshacer.`)){
-      try{ await api(`/api/equipos/${folio}/force`, {method:'DELETE'}); await loadAll(); renderInventarioView(); showToast('Eliminado (incluyendo su historial de responsivas)'); }
+      try{ await api(`/api/equipos/${encodeURIComponent(folio)}/force`, {method:'DELETE'}); await loadAll(); renderInventarioView(); showToast('Eliminado (incluyendo su historial de responsivas)'); }
       catch(e2){ showToast(e2.message, true); }
     } else {
       showToast(e.message, true);
@@ -927,7 +927,7 @@ async function openCartaFromResponse(folio, resp){
   el('cartaStatus').innerHTML = resp.correoEnviado ? `<span class="badge activo">Correo enviado</span>`
     : resp.correoError ? `<span class="badge baja">No se pudo enviar: ${escapeHtml(resp.correoError)}</span>`
     : `<span class="badge resguardo">No se envió correo (no se marcó la casilla)</span>`;
-  const html = await api(`/api/equipos/responsivas/${resp.responsivaId}/html`);
+  const html = await api(`/api/equipos/responsivas/${encodeURIComponent(resp.responsivaId)}/html`);
   el('cartaFrame').srcdoc = html;
   el('btnDescargarCarta').onclick = () => downloadHtml(html, `responsiva_${resp.folioResponsiva.replace(/\//g,'-')}.html`);
   el('overlayCarta').classList.add('show');
@@ -1237,7 +1237,7 @@ async function saveEmpleado(){
   data.estado = document.getElementById('ef_estado').value;
   if(!data.id || !data.nombre || !data.correo){ showToast('ID, nombre y correo son obligatorios', true); return; }
   try{
-    if(editingEmpId) await api(`/api/empleados/${editingEmpId}`, {method:'PUT', body:data});
+    if(editingEmpId) await api(`/api/empleados/${encodeURIComponent(editingEmpId)}`, {method:'PUT', body:data});
     else await api('/api/empleados', {method:'POST', body:data});
     await loadAll(); el('overlayEmp').classList.remove('show'); renderAdminEmpleados(); renderInventarioView();
     showToast('Guardado');
@@ -1245,7 +1245,7 @@ async function saveEmpleado(){
 }
 async function deleteEmpleado(id){
   if(!confirm('¿Eliminar este empleado?')) return;
-  try{ await api(`/api/empleados/${id}?confirmar=true`, {method:'DELETE'}); await loadAll(); renderAdminEmpleados(); renderInventarioView(); showToast('Eliminado'); }
+  try{ await api(`/api/empleados/${encodeURIComponent(id)}?confirmar=true`, {method:'DELETE'}); await loadAll(); renderAdminEmpleados(); renderInventarioView(); showToast('Eliminado'); }
   catch(e){ showToast(e.message, true); }
 }
 el('empModalClose').onclick = () => el('overlayEmp').classList.remove('show');
