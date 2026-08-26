@@ -640,7 +640,7 @@ function getFiltered(){
   return equipos.filter(i => {
     if(categoryTab!=='Todas' && i.categoria!==categoryTab) return false;
     if(fEstado && i.estado!==fEstado) return false;
-    if(q && !`${i.folio} ${i.marca} ${i.modelo} ${i.serie} ${empleadoLabel(i.empleadoId)}`.toLowerCase().includes(q)) return false;
+    if(q && !`${i.folio} ${i.marca} ${i.modelo} ${i.serie} ${i.telefono||''} ${empleadoLabel(i.empleadoId)}`.toLowerCase().includes(q)) return false;
     return true;
   });
 }
@@ -654,7 +654,7 @@ function renderTable(){
       const gl = garantiaLabel(i.garantia); const pl = prestamoLabel(i.prestamo);
       return `<tr>
         <td class="folio">${escapeHtml(i.folio)}${dupSet.has(i.folio)?' <span class="badge dup">dup</span>':''}</td>
-        <td><span class="badge ${catClass(i.categoria)}">${escapeHtml(i.categoria)}</span>${i.subtipo?`<span class="sublabel">${escapeHtml(i.subtipo)}</span>`:''}${i.categoria==='Celular' && i.componenteCelular && i.componenteCelular!=='Equipo y SIM' ? `<span class="sublabel">${escapeHtml(i.componenteCelular)}</span>` : ''}</td>
+        <td><span class="badge ${catClass(i.categoria)}">${escapeHtml(i.categoria)}</span>${i.categoria!=='Celular' && i.subtipo?`<span class="sublabel">${escapeHtml(i.subtipo)}</span>`:''}${i.categoria==='Celular' && i.telefono?`<span class="sublabel">${escapeHtml(i.telefono)}</span>`:''}${i.categoria==='Celular' && i.componenteCelular && i.componenteCelular!=='Equipo y SIM' ? `<span class="sublabel">${escapeHtml(i.componenteCelular)}</span>` : ''}</td>
         <td>${escapeHtml(i.marca)}${i.modelo?' · '+escapeHtml(i.modelo):''}</td>
         <td class="serie">${escapeHtml(i.serie)}</td>
         <td>${escapeHtml(empleadoLabel(i.empleadoId))||'Sin asignar'}</td>
@@ -746,9 +746,10 @@ const FIELD_SECTIONS = [
     {key:'folio', label:'Folio', type:'text', required:true, disabledOnEdit:true},
     {key:'categoria', label:'Categoría', type:'select', options:CATEGORIAS, required:true},
     {key:'subtipo', label:'Especificar tipo', type:'text', showIf:'Otro'},
+    {key:'telefono', label:'Número telefónico', type:'text', showIf:'Celular'},
     {key:'marca', label:'Marca', type:'text'}, {key:'modelo', label:'Modelo', type:'text'},
     {key:'serie', label:'Serie / IMEI', type:'text'},
-    {key:'estado', label:'Estado', type:'select', options:ESTADOS, required:true},
+    {key:'estado', label:'Estado', type:'select', options:ESTADOS, required:true, default:'Activo'},
     {key:'ubicacion', label:'Ubicación', type:'text'},
     {key:'nombreEquipo', label:'Nombre de equipo', type:'text'},
     {key:'condicion', label:'Estado de entrega', type:'select', options:['Nuevo','Usado']},
@@ -785,7 +786,7 @@ function buildForm(item){
       let hint = f.hintKey ? `<span class="hint" id="hint_${f.key}"></span>` : '';
       let control;
       if(f.type==='select'){
-        control = `<select id="f_${f.key}" ${f.required?'required':''}><option value="">Selecciona...</option>${f.options.map(o=>`<option value="${o}" ${item&&item[f.key]===o?'selected':''}>${o}</option>`).join('')}</select>`;
+        control = `<select id="f_${f.key}" ${f.required?'required':''}><option value="">Selecciona...</option>${f.options.map(o=>`<option value="${o}" ${item ? ((item[f.key]||'').toString().trim().toLowerCase()===o.toLowerCase()?'selected':'') : (f.default===o?'selected':'')}>${o}</option>`).join('')}</select>`;
       } else if(f.type==='employee'){
         const sorted = [...employees].sort((a,b)=>a.nombre.localeCompare(b.nombre));
         control = `<select id="f_${f.key}"><option value="">Sin asignar</option>${sorted.map(e=>`<option value="${e.id}" ${item&&item[f.key]===e.id?'selected':''}>${escapeHtml(e.nombre)}${e.departamento?' — '+escapeHtml(e.departamento):''}</option>`).join('')}</select>`;
@@ -823,16 +824,29 @@ function buildForm(item){
   const catSel = document.getElementById('f_categoria');
   const estadoSel = document.getElementById('f_estado');
   const tasaInput = document.getElementById('f_tasaDepreciacion');
+  const camposEquipoFisico = ['marca','modelo','serie','condicion','accesorios','nombreEquipo','garantiaMeses'];
   function updateDependents(){
     document.getElementById('wrap_subtipo').style.display = (catSel.value==='Otro') ? '' : 'none';
     document.getElementById('wrap_fechaDevolucionEsperada').style.display = (estadoSel.value==='Prestado') ? '' : 'none';
     const wrapComp = document.getElementById('wrap_componenteCelular');
+    const wrapTelefono = document.getElementById('wrap_telefono');
     if(wrapComp) wrapComp.style.display = (catSel.value==='Celular') ? '' : 'none';
+    if(wrapTelefono) wrapTelefono.style.display = (catSel.value==='Celular') ? '' : 'none';
+    const compSel = document.getElementById('f_componenteCelular');
+    const esSoloSim = catSel.value==='Celular' && compSel && compSel.value==='Solo SIM';
+    camposEquipoFisico.forEach(k => {
+      const campo = document.getElementById(`f_${k}`);
+      const wrap = document.getElementById(`wrap_${k}`);
+      if(campo){ campo.disabled = esSoloSim; if(esSoloSim) campo.value=''; }
+      if(wrap) wrap.style.opacity = esSoloSim ? '0.45' : '1';
+    });
     if(document.getElementById('hint_tasaDepreciacion')) document.getElementById('hint_tasaDepreciacion').textContent = catSel.value ? `Sugerido: ${TASA_SUGERIDA[catSel.value]}%` : '';
     if(catSel.value && !tasaInput.dataset.userTouched && !tasaInput.value) tasaInput.value = TASA_SUGERIDA[catSel.value] ?? '';
   }
   catSel.addEventListener('change', updateDependents);
   estadoSel.addEventListener('change', updateDependents);
+  const compSelForListener = document.getElementById('f_componenteCelular');
+  if(compSelForListener) compSelForListener.addEventListener('change', updateDependents);
   tasaInput.addEventListener('input', () => tasaInput.dataset.userTouched='1');
   updateDependents();
 }
@@ -965,15 +979,16 @@ function descargarPlantillaCSV(){
 }
 function csvVal(v){ return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }
 function descargarPlantillaCelularesCSV(){
-  const headers = ['folio','categoria','subtipo','marca','modelo','serie','estado','ubicacion','nombreEquipo','condicion','accesorios','componenteCelular','empleadoId','proveedor','rfcProveedor','numeroFactura','fechaFactura','fechaInicioUso','montoFactura','tasaDepreciacion','garantiaMeses','fechaDevolucionEsperada','notas'];
-  const ej1 = ['CEL-0001','Celular','','Apple','iPhone 14','IMEI0000000000001','Activo','','','Nuevo','Cargador','Equipo y SIM','','Telcel','TEL010101AAA','UUID-DE-LA-FACTURA','2026-01-15','2026-01-15','8000.00','25','12','','Ejemplo: se entrega el equipo físico + la línea (SIM)'];
-  const ej2 = ['CEL-0002','Celular','','','','','Activo','','','','','Solo SIM','','','','','','','','','','Ejemplo: el empleado trae su propio celular, solo se le asigna la línea/SIM'];
+  const headers = ['folio','categoria','telefono','marca','modelo','serie','estado','ubicacion','nombreEquipo','condicion','accesorios','componenteCelular','empleadoId','proveedor','rfcProveedor','numeroFactura','fechaFactura','fechaInicioUso','montoFactura','tasaDepreciacion','garantiaMeses','fechaDevolucionEsperada','notas'];
+  const ej1 = ['CEL-0001','Celular','5512345678','Apple','iPhone 14','IMEI0000000000001','Activo','','','Nuevo','Cargador','Equipo y SIM','','Telcel','TEL010101AAA','UUID-DE-LA-FACTURA','2026-01-15','2026-01-15','8000.00','25','12','','Ejemplo: se entrega el equipo físico + la línea (SIM)'];
+  const ej2 = ['CEL-0002','Celular','5587654321','','','','Activo','','','','','Solo SIM','','','','','','','','','','Ejemplo: el empleado trae su propio celular, solo se le asigna la línea/SIM'];
   const ej3 = ['CEL-0003','Celular','','Samsung','Galaxy S23','','En resguardo','','','','','Solo equipo','','','','','','','','','','Ejemplo: equipo disponible en resguardo, todavía sin línea asignada'];
   const notaCategoria = `# categoria debe ser "Celular" en todos los renglones de esta plantilla`;
-  const notaComponente = `# componenteCelular: "Equipo y SIM" (equipo físico + línea), "Solo equipo" (sin línea todavía) o "Solo SIM" (el empleado usa su propio celular, solo se le asigna la línea)`;
+  const notaTelefono = `# telefono: número de línea asignado (a 10 dígitos). Déjalo en blanco si el equipo aún no tiene línea (ej. "Solo equipo")`;
+  const notaComponente = `# componenteCelular: "Equipo y SIM" (equipo físico + línea), "Solo equipo" (sin línea todavía) o "Solo SIM" (el empleado usa su propio celular, solo se le asigna la línea — en este caso deja marca/modelo/serie en blanco)`;
   const notaEstado = `# estado: Activo, En reparación, En resguardo, Prestado o Baja`;
   const notaFactura = `# proveedor, rfcProveedor, numeroFactura, fechaFactura y montoFactura son OPCIONALES: déjalos en blanco (o quita esas columnas) si no tienes esa información a la mano`;
-  const csv = [notaCategoria, notaComponente, notaEstado, notaFactura, headers.join(','), ej1.map(csvVal).join(','), ej2.map(csvVal).join(','), ej3.map(csvVal).join(',')].join('\n');
+  const csv = [notaCategoria, notaTelefono, notaComponente, notaEstado, notaFactura, headers.join(','), ej1.map(csvVal).join(','), ej2.map(csvVal).join(','), ej3.map(csvVal).join(',')].join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='plantilla_celulares.csv'; a.click();
