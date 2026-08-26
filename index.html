@@ -102,6 +102,9 @@
   .combobox-item:hover{background:var(--surface-alt);}
   .combobox-item.crear{color:var(--accent);font-weight:600;border-top:1px solid var(--border);}
   .combobox-empty{padding:8px 10px;color:var(--ink-faint);font-size:12.5px;}
+  .folio-enable-link{display:block;margin-top:5px;font-size:11.5px;color:var(--accent);text-decoration:none;}
+  .folio-enable-link:hover{text-decoration:underline;}
+  input:disabled{background:var(--surface-alt);color:var(--ink-faint);cursor:not-allowed;}
 
   .tablewrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
   table{width:100%;border-collapse:collapse;font-size:12.8px;}
@@ -835,7 +838,9 @@ function buildForm(item){
         const dv = item && item[f.key] ? new Date(item[f.key]).toISOString().slice(0,10) : '';
         control = `<input type="date" id="f_${f.key}" value="${dv}">`;
       } else {
-        control = `<input type="${f.type}" id="f_${f.key}" value="${val}" ${f.required?'required':''} ${f.disabledOnEdit && item ? 'readonly' : ''} ${f.type==='number'?'step="0.01" min="0"':''}>`;
+        const soloLecturaAlEditar = f.disabledOnEdit && item;
+        control = `<input type="${f.type}" id="f_${f.key}" value="${val}" ${f.required?'required':''} ${soloLecturaAlEditar ? 'disabled' : ''} ${f.type==='number'?'step="0.01" min="0"':''}>`;
+        if(soloLecturaAlEditar) control += `<a href="#" class="folio-enable-link" data-key="${f.key}">Habilitar edición</a>`;
       }
       html += `<div class="field ${f.full?'full':''}" id="wrap_${f.key}" ${hidden}><label>${f.label}${req}${hint}</label>${control}</div>`;
     });
@@ -886,6 +891,13 @@ function buildForm(item){
   tasaInput.addEventListener('input', () => tasaInput.dataset.userTouched='1');
   updateDependents();
   setupEmpleadoCombobox('empleadoId', item);
+  document.querySelectorAll('.folio-enable-link').forEach(link => link.addEventListener('click', e => {
+    e.preventDefault();
+    const campo = document.getElementById(`f_${link.dataset.key}`);
+    campo.disabled = false;
+    campo.focus();
+    link.remove();
+  }));
 }
 let empCreationCallback = null;
 function setupEmpleadoCombobox(key, item){
@@ -948,6 +960,8 @@ function openModal(folio){
   el('modalTitle').textContent = item ? `Editar — ${item.folio}` : 'Nuevo equipo';
   buildForm(item);
   el('overlay').classList.add('show');
+  const cuerpoModal = document.querySelector('#overlay .modal-body');
+  if(cuerpoModal){ cuerpoModal.scrollTop = 0; requestAnimationFrame(() => { cuerpoModal.scrollTop = 0; }); }
 }
 function closeModal(){ el('overlay').classList.remove('show'); editingFolio = null; }
 async function saveItem(){
