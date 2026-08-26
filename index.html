@@ -955,7 +955,8 @@ function descargarPlantillaCSV(){
   const notaCategorias = `# categoria: Laptop, CPU, Celular, Monitor u Otro`;
   const notaComponente = `# componenteCelular (solo si categoria=Celular): "Equipo y SIM", "Solo equipo" o "Solo SIM"`;
   const notaEstado = `# estado: Activo, En reparación, En resguardo, Prestado o Baja`;
-  const csv = [notaCategorias, notaComponente, notaEstado, headers.join(','), ejemplo.map(v=>/[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')].join('\n');
+  const notaFactura = `# proveedor, rfcProveedor, numeroFactura, fechaFactura y montoFactura son OPCIONALES: déjalos en blanco (o quita esas columnas) si no tienes esa información a la mano`;
+  const csv = [notaCategorias, notaComponente, notaEstado, notaFactura, headers.join(','), ejemplo.map(v=>/[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v).join(',')].join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='plantilla_inventario_equipos.csv'; a.click();
@@ -971,7 +972,8 @@ function descargarPlantillaCelularesCSV(){
   const notaCategoria = `# categoria debe ser "Celular" en todos los renglones de esta plantilla`;
   const notaComponente = `# componenteCelular: "Equipo y SIM" (equipo físico + línea), "Solo equipo" (sin línea todavía) o "Solo SIM" (el empleado usa su propio celular, solo se le asigna la línea)`;
   const notaEstado = `# estado: Activo, En reparación, En resguardo, Prestado o Baja`;
-  const csv = [notaCategoria, notaComponente, notaEstado, headers.join(','), ej1.map(csvVal).join(','), ej2.map(csvVal).join(','), ej3.map(csvVal).join(',')].join('\n');
+  const notaFactura = `# proveedor, rfcProveedor, numeroFactura, fechaFactura y montoFactura son OPCIONALES: déjalos en blanco (o quita esas columnas) si no tienes esa información a la mano`;
+  const csv = [notaCategoria, notaComponente, notaEstado, notaFactura, headers.join(','), ej1.map(csvVal).join(','), ej2.map(csvVal).join(','), ej3.map(csvVal).join(',')].join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='plantilla_celulares.csv'; a.click();
