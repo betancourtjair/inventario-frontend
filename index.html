@@ -500,12 +500,15 @@ async function api(path, opts = {}){
 /* ---------------- LOGIN ---------------- */
 async function login(){
   el('loginErr').textContent = '';
+  const btn = el('btnLogin');
+  setBotonCargando(btn, 'Ingresando...');
   try{
     const data = await api('/api/auth/login', {method:'POST', body:{correo: el('loginCorreo').value.trim(), password: el('loginPassword').value}});
     token = data.token; rol = data.rol;
     localStorage.setItem('inv_token', token); localStorage.setItem('inv_rol', rol);
     await boot();
   }catch(e){ el('loginErr').textContent = e.message; }
+  finally{ quitarBotonCargando(btn); }
 }
 function logout(){
   token = null; rol = null;
@@ -1301,7 +1304,7 @@ function openEmpleadoDetalle(id){
     </tbody></table>` : `<p style="color:var(--ink-faint);">Este empleado no tiene equipos asignados.</p>`}`;
   el('overlayEmpleadoDetalle').classList.add('show');
 }
-const DEPARTAMENTOS = ['DIRECCION','FINANZAS Y ADMON.','CRECIMIENTO HUMANO','OPERACIONES','MARKETING','CONSTRUCCION','EXPANSION','TI'];
+const DEPARTAMENTOS = ['DIRECCION','FINANZAS','CRECIMIENTO HUMANO','OPERACIONES','MARKETING','CONSTRUCCION','EXPANSION','TI'];
 const EMP_FIELDS = [
   {key:'id', label:'ID', required:true}, {key:'nombre', label:'Nombre', required:true},
   {key:'correo', label:'Correo', required:true}, {key:'departamento', label:'Departamento', type:'select', options:DEPARTAMENTOS}, {key:'puesto', label:'Puesto'},
