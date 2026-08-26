@@ -79,6 +79,10 @@
   .toolbar input[type=text], .toolbar select{border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:13.5px;background:var(--surface-alt);color:var(--ink);}
   .toolbar input[type=text]{flex:1 1 220px;min-width:180px;}
   .toolbar .spacer{flex:1;}
+  .dropdown-wrap{position:relative;display:inline-block;}
+  .dropdown-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:8px;display:flex;flex-direction:column;gap:6px;z-index:30;min-width:210px;}
+  .dropdown-menu.hidden{display:none;}
+  .dropdown-menu .btn{width:100%;justify-content:flex-start;}
   .btn{border:none;border-radius:7px;padding:8px 14px;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
   .btn-primary{background:var(--accent);color:#fff;}
   .btn-ghost{background:var(--surface-alt);color:var(--ink);border:1px solid var(--border);}
@@ -223,11 +227,29 @@
       <input type="text" id="searchInput" placeholder="Buscar por folio, marca, modelo, serie, empleado...">
       <select id="filterEstado"><option value="">Todos los estados</option></select>
       <div class="spacer"></div>
-      <button class="btn btn-ghost" id="btnPlantillaCSV">Descargar plantilla CSV</button>
-      <button class="btn btn-ghost" id="btnImport">Importar CSV</button>
-      <input type="file" id="fileImport" accept=".csv">
-      <button class="btn btn-ghost" id="btnImportFactura">Importar factura (XML)</button>
-      <input type="file" id="fileImportFactura" accept=".xml">
+
+      <div class="dropdown-wrap" id="ddEquipos">
+        <button class="btn btn-ghost" id="btnDDEquipos">Importar Equipos ▾</button>
+        <div class="dropdown-menu hidden" id="ddEquiposMenu">
+          <button class="btn btn-ghost" id="btnPlantillaCSV">Descargar plantilla CSV</button>
+          <button class="btn btn-ghost" id="btnImport">Importar CSV</button>
+          <input type="file" id="fileImport" accept=".csv">
+          <button class="btn btn-ghost" id="btnImportFactura">Importar factura (XML)</button>
+          <input type="file" id="fileImportFactura" accept=".xml">
+        </div>
+      </div>
+
+      <div class="dropdown-wrap" id="ddCelulares">
+        <button class="btn btn-ghost" id="btnDDCelulares">Celulares ▾</button>
+        <div class="dropdown-menu hidden" id="ddCelularesMenu">
+          <button class="btn btn-ghost" id="btnPlantillaCSVCel">Descargar plantilla CSV</button>
+          <button class="btn btn-ghost" id="btnImportCel">Importar CSV</button>
+          <input type="file" id="fileImportCel" accept=".csv">
+          <button class="btn btn-ghost" id="btnImportFacturaCel">Importar factura (XML)</button>
+          <input type="file" id="fileImportFacturaCel" accept=".xml">
+        </div>
+      </div>
+
       <button class="btn btn-primary" id="btnNew">+ Nuevo equipo</button>
     </div>
     <div class="tablewrap">
@@ -931,6 +953,22 @@ function descargarPlantillaCSV(){
   URL.revokeObjectURL(url);
   showToast('Plantilla descargada — borra las líneas que empiezan con # y el renglón de ejemplo antes de importar');
 }
+function csvVal(v){ return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }
+function descargarPlantillaCelularesCSV(){
+  const headers = ['folio','categoria','subtipo','marca','modelo','serie','estado','ubicacion','nombreEquipo','condicion','accesorios','componenteCelular','empleadoId','proveedor','rfcProveedor','numeroFactura','fechaFactura','fechaInicioUso','montoFactura','tasaDepreciacion','garantiaMeses','fechaDevolucionEsperada','notas'];
+  const ej1 = ['CEL-0001','Celular','','Apple','iPhone 14','IMEI0000000000001','Activo','','','Nuevo','Cargador','Equipo y SIM','','Telcel','TEL010101AAA','UUID-DE-LA-FACTURA','2026-01-15','2026-01-15','8000.00','25','12','','Ejemplo: se entrega el equipo físico + la línea (SIM)'];
+  const ej2 = ['CEL-0002','Celular','','','','','Activo','','','','','Solo SIM','','','','','','','','','','Ejemplo: el empleado trae su propio celular, solo se le asigna la línea/SIM'];
+  const ej3 = ['CEL-0003','Celular','','Samsung','Galaxy S23','','En resguardo','','','','','Solo equipo','','','','','','','','','','Ejemplo: equipo disponible en resguardo, todavía sin línea asignada'];
+  const notaCategoria = `# categoria debe ser "Celular" en todos los renglones de esta plantilla`;
+  const notaComponente = `# componenteCelular: "Equipo y SIM" (equipo físico + línea), "Solo equipo" (sin línea todavía) o "Solo SIM" (el empleado usa su propio celular, solo se le asigna la línea)`;
+  const notaEstado = `# estado: Activo, En reparación, En resguardo, Prestado o Baja`;
+  const csv = [notaCategoria, notaComponente, notaEstado, headers.join(','), ej1.map(csvVal).join(','), ej2.map(csvVal).join(','), ej3.map(csvVal).join(',')].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='plantilla_celulares.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('Plantilla de celulares descargada — borra las líneas que empiezan con # y los renglones de ejemplo antes de importar');
+}
 async function importCSV(file){
   const text = await file.text();
   const lines = text.split(/\r?\n/).filter(l=>l.trim().length && !l.trim().startsWith('#'));
@@ -1257,6 +1295,17 @@ function bindEvents(){
   el('fileImport').onchange = e => { if(e.target.files[0]) importCSV(e.target.files[0]); e.target.value=''; };
   el('btnImportFactura').onclick = () => el('fileImportFactura').click();
   el('fileImportFactura').onchange = e => { if(e.target.files[0]) handleFacturaFile(e.target.files[0]); e.target.value=''; };
+
+  el('btnPlantillaCSVCel').onclick = descargarPlantillaCelularesCSV;
+  el('btnImportCel').onclick = () => el('fileImportCel').click();
+  el('fileImportCel').onchange = e => { if(e.target.files[0]) importCSV(e.target.files[0]); e.target.value=''; };
+  el('btnImportFacturaCel').onclick = () => el('fileImportFacturaCel').click();
+  el('fileImportFacturaCel').onchange = e => { if(e.target.files[0]) handleFacturaFile(e.target.files[0]); e.target.value=''; };
+
+  el('btnDDEquipos').onclick = e => { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach(m => { if(m.id!=='ddEquiposMenu') m.classList.add('hidden'); }); el('ddEquiposMenu').classList.toggle('hidden'); };
+  el('btnDDCelulares').onclick = e => { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach(m => { if(m.id!=='ddCelularesMenu') m.classList.add('hidden'); }); el('ddCelularesMenu').classList.toggle('hidden'); };
+  document.addEventListener('click', e => { if(!e.target.closest('.dropdown-wrap')) document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden')); });
+  document.querySelectorAll('.dropdown-menu button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden')); }));
   el('facturaClose').onclick = closeFacturaModal;
   el('facturaCancelBtn').onclick = closeFacturaModal;
   el('overlayFactura').onclick = e => { if(e.target===el('overlayFactura')) closeFacturaModal(); };
@@ -1286,7 +1335,7 @@ function bindEvents(){
 
 function applyRolUI(){
   const escritura = puedeEscribir();
-  ['btnNew','btnImport','btnImportFactura','btnEmpNew','btnEmpImportXML'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
+  ['btnNew','btnImport','btnImportFactura','btnImportCel','btnImportFacturaCel','btnEmpNew','btnEmpImportXML'].forEach(id => { const e = el(id); if(e) e.classList.toggle('hidden', !escritura); });
   if(!escritura){
     el('whoAmI').innerHTML = `Sesión: ${rol} <span class="badge resguardo" style="margin-left:6px;">Solo lectura</span>`;
   }
