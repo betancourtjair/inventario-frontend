@@ -89,6 +89,9 @@
   .btn-danger{background:var(--red-soft);color:var(--red);}
   .btn-sm{padding:5px 9px;font-size:12px;border-radius:6px;}
   .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:girar .7s linear infinite;vertical-align:-2px;margin-right:6px;}
+  .btn-ghost .spinner, .btn-danger .spinner{border-color:rgba(17,27,34,.2);border-top-color:var(--ink);}
+  @keyframes girar{to{transform:rotate(360deg);}}
 
   .tablewrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
   table{width:100%;border-collapse:collapse;font-size:12.8px;}
@@ -453,6 +456,19 @@ const fmtMoney = n => (isFinite(n) ? n : 0).toLocaleString('es-MX', {style:'curr
 const fmtDate = d => d ? new Date(d).toLocaleDateString('es-MX', {year:'numeric', month:'short', day:'numeric'}) : '—';
 function escapeHtml(str){ return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showToast(msg, isError){ const t = el('toast'); t.textContent = msg; t.className = 'toast show' + (isError?' error':''); clearTimeout(t._timer); t._timer = setTimeout(()=>t.classList.remove('show'), 2400); }
+function setBotonCargando(btn, textoCargando){
+  if(!btn || btn.dataset.cargando==='1') return;
+  btn.dataset.cargando = '1';
+  btn.dataset.textoOriginal = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>${textoCargando || 'Guardando...'}`;
+}
+function quitarBotonCargando(btn){
+  if(!btn) return;
+  btn.disabled = false;
+  btn.dataset.cargando = '0';
+  if(btn.dataset.textoOriginal !== undefined) btn.innerHTML = btn.dataset.textoOriginal;
+}
 
 /* ---------------- API ---------------- */
 async function api(path, opts = {}){
@@ -498,10 +514,13 @@ async function saveChangePass(){
   if(!actual || !nueva){ el('passErr').textContent = 'Completa todos los campos'; return; }
   if(nueva.length < 6){ el('passErr').textContent = 'La nueva contraseña debe tener al menos 6 caracteres'; return; }
   if(nueva !== confirma){ el('passErr').textContent = 'La confirmación no coincide'; return; }
+  const btn = el('passGuardar');
+  setBotonCargando(btn);
   try{
     await api('/api/auth/cambiar-password', {method:'POST', body:{passwordActual: actual, passwordNueva: nueva}});
     closeChangePass(); showToast('Contraseña actualizada');
   }catch(e){ el('passErr').textContent = e.message; }
+  finally{ quitarBotonCargando(btn); }
 }
 
 /* ---------------- ADMIN · USUARIOS DEL SISTEMA ---------------- */
@@ -529,11 +548,14 @@ async function renderAdminUsuarios(){
 async function addUsuario(){
   const correo = el('usrCorreo').value.trim(), rolNuevo = el('usrRol').value, password = el('usrPassword').value;
   if(!correo || !password){ showToast('Correo y contraseña son obligatorios', true); return; }
+  const btn = el('btnAddUsuario');
+  setBotonCargando(btn, 'Creando...');
   try{
     await api('/api/auth/usuarios', {method:'POST', body:{correo, rol: rolNuevo, password}});
     el('usrCorreo').value=''; el('usrPassword').value='';
     renderAdminUsuarios(); showToast('Usuario creado');
   }catch(e){ showToast(e.message, true); }
+  finally{ quitarBotonCargando(btn); }
 }
 
 /* ---------------- CARGA ---------------- */
@@ -884,6 +906,8 @@ async function saveItem(){
   const enviarCorreo = document.getElementById('f_enviarCorreo').checked;
   const prevEmpleadoId = editingFolio ? (equipos.find(i=>i.folio===editingFolio)||{}).empleadoId : null;
 
+  const btn = el('btnSave');
+  setBotonCargando(btn, 'Guardando...');
   try{
     if(editingFolio){ await api(`/api/equipos/${encodeURIComponent(editingFolio)}`, {method:'PUT', body:data}); }
     else { await api('/api/equipos', {method:'POST', body:data}); }
@@ -897,6 +921,7 @@ async function saveItem(){
     if(cartaResp && cartaResp.responsivaGenerada) openCartaFromResponse(data.folio, cartaResp);
     else showToast('Guardado');
   }catch(e){ showToast(e.message, true); }
+  finally{ quitarBotonCargando(btn); }
 }
 async function deleteItem(folio){
   if(!confirm(`¿Eliminar el equipo "${folio}"?`)) return;
@@ -1146,24 +1171,28 @@ function addFacturaRow(){
 function closeFacturaModal(){ el('overlayFactura').classList.remove('show'); }
 async function crearDesdeFactura(){
   if(!facturaRows.length){ showToast('No hay renglones para crear', true); return; }
+  const btn = el('btnCrearDesdeFactura');
+  setBotonCargando(btn, 'Creando...');
   let creados = 0, fallidos = [];
-  for(const r of facturaRows){
-    const data = {
-      folio: r.folio, categoria: r.categoria, subtipo: r.categoria==='Otro' ? r.subtipo : '',
-      marca: r.marca, modelo: r.modelo,
-      serie: r.serie, estado: 'Activo',
-      proveedor: facturaHeader.proveedor, rfcProveedor: facturaHeader.rfcProveedor,
-      numeroFactura: facturaHeader.numeroFactura, fechaFactura: facturaHeader.fechaFactura,
-      fechaInicioUso: facturaHeader.fechaFactura,
-      montoFactura: r.montoUnitario, tasaDepreciacion: r.tasaDepreciacion,
-      notas: r.descripcion ? `Importado de factura. Descripción original: ${r.descripcion}` : '',
-    };
-    try{ await api('/api/equipos', {method:'POST', body:data}); creados++; }
-    catch(e){ fallidos.push(`${r.folio}: ${e.message}`); }
-  }
-  await loadAll(); closeFacturaModal(); renderInventarioView();
-  showToast(`Creados ${creados} equipo(s)${fallidos.length ? `, ${fallidos.length} con error` : ''}`, fallidos.length>0);
-  if(fallidos.length) console.warn('Errores al crear desde factura:', fallidos);
+  try{
+    for(const r of facturaRows){
+      const data = {
+        folio: r.folio, categoria: r.categoria, subtipo: r.categoria==='Otro' ? r.subtipo : '',
+        marca: r.marca, modelo: r.modelo,
+        serie: r.serie, estado: 'Activo',
+        proveedor: facturaHeader.proveedor, rfcProveedor: facturaHeader.rfcProveedor,
+        numeroFactura: facturaHeader.numeroFactura, fechaFactura: facturaHeader.fechaFactura,
+        fechaInicioUso: facturaHeader.fechaFactura,
+        montoFactura: r.montoUnitario, tasaDepreciacion: r.tasaDepreciacion,
+        notas: r.descripcion ? `Importado de factura. Descripción original: ${r.descripcion}` : '',
+      };
+      try{ await api('/api/equipos', {method:'POST', body:data}); creados++; }
+      catch(e){ fallidos.push(`${r.folio}: ${e.message}`); }
+    }
+    await loadAll(); closeFacturaModal(); renderInventarioView();
+    showToast(`Creados ${creados} equipo(s)${fallidos.length ? `, ${fallidos.length} con error` : ''}`, fallidos.length>0);
+    if(fallidos.length) console.warn('Errores al crear desde factura:', fallidos);
+  } finally { quitarBotonCargando(btn); }
 }
 
 /* ---------------- ADMIN EMPLEADOS ---------------- */
@@ -1251,12 +1280,15 @@ async function saveEmpleado(){
   const data = {}; EMP_FIELDS.forEach(f => data[f.key] = document.getElementById(`ef_${f.key}`).value.trim());
   data.estado = document.getElementById('ef_estado').value;
   if(!data.id || !data.nombre || !data.correo){ showToast('ID, nombre y correo son obligatorios', true); return; }
+  const btn = el('empBtnSave');
+  setBotonCargando(btn);
   try{
     if(editingEmpId) await api(`/api/empleados/${encodeURIComponent(editingEmpId)}`, {method:'PUT', body:data});
     else await api('/api/empleados', {method:'POST', body:data});
     await loadAll(); el('overlayEmp').classList.remove('show'); renderAdminEmpleados(); renderInventarioView();
     showToast('Guardado');
   }catch(e){ showToast(e.message, true); }
+  finally{ quitarBotonCargando(btn); }
 }
 async function deleteEmpleado(id){
   if(!confirm('¿Eliminar este empleado?')) return;
@@ -1281,10 +1313,14 @@ function renderAdminLimites(){
   lockIfReadOnly('sub-limites');
 }
 async function saveLimites(){
-  for(const c of CATEGORIAS){ const v = document.getElementById(`limcat_${c}`).value; await api(`/api/limites/categoria/${c}`, {method:'PUT', body:{limite: v===''?9999:parseInt(v)}}); }
-  const lim = await api('/api/limites');
-  limites.categorias = Object.fromEntries(lim.categorias.map(l => [l.categoria, l.limite]));
-  renderAdminLimites(); renderInventarioView(); showToast('Límites guardados');
+  const btn = el('btnSaveLimites');
+  setBotonCargando(btn);
+  try{
+    for(const c of CATEGORIAS){ const v = document.getElementById(`limcat_${c}`).value; await api(`/api/limites/categoria/${c}`, {method:'PUT', body:{limite: v===''?9999:parseInt(v)}}); }
+    const lim = await api('/api/limites');
+    limites.categorias = Object.fromEntries(lim.categorias.map(l => [l.categoria, l.limite]));
+    renderAdminLimites(); renderInventarioView(); showToast('Límites guardados');
+  } finally { quitarBotonCargando(btn); }
 }
 async function addLimiteSubtipo(){
   const nombre = el('limSubtipoNombre').value.trim(); const valor = el('limSubtipoValor').value;
@@ -1302,19 +1338,26 @@ function renderAdminConfig(){
   lockIfReadOnly('sub-config');
 }
 async function saveConfig(){
-  await api('/api/config', {method:'PUT', body:{
-    empresaNombre: el('cfgEmpresaNombre').value.trim(),
-    correoAdminTI: el('cfgCorreoAdminTI').value.trim(),
-    modoMigracion: el('cfgModoMigracion').checked ? 'true' : 'false',
-  }});
-  config = await api('/api/config'); showToast('Configuración guardada');
+  const btn = el('btnSaveConfig');
+  setBotonCargando(btn);
+  try{
+    await api('/api/config', {method:'PUT', body:{
+      empresaNombre: el('cfgEmpresaNombre').value.trim(),
+      correoAdminTI: el('cfgCorreoAdminTI').value.trim(),
+      modoMigracion: el('cfgModoMigracion').checked ? 'true' : 'false',
+    }});
+    config = await api('/api/config'); showToast('Configuración guardada');
+  } finally { quitarBotonCargando(btn); }
 }
 async function runPrestamos(){
+  const btn = el('btnRunPrestamos');
+  setBotonCargando(btn, 'Revisando...');
   el('prestamosResultado').textContent = 'Revisando...';
   try{ const resp = await api('/api/equipos/verificar-prestamos-vencidos', {method:'POST'});
     el('prestamosResultado').textContent = `Revisados: ${resp.revisados}. ` + resp.resultados.map(r => `${r.folio}: ${r.ok?'enviado':'error ('+r.error+')'}`).join(' · ');
     await loadAll(); renderInventarioView();
   }catch(e){ el('prestamosResultado').textContent = 'Error: '+e.message; }
+  finally{ quitarBotonCargando(btn); }
 }
 
 /* ---------------- EVENTOS ---------------- */
